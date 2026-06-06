@@ -545,6 +545,22 @@ def _include_status(include_token: str, netlist_dir: str):
     return f"{include_path}: MISSING at {candidate}", False
 
 
+def _voltage_source_fact(tokens):
+    if len(tokens) < 4:
+        return ""
+    source_expr = " ".join(tokens[3:])
+    return f"{tokens[0]} between {tokens[1]} and {tokens[2]} uses {source_expr}"
+
+
+def _load_candidate_fact(tokens):
+    if len(tokens) < 4:
+        return ""
+    node_a, node_b = tokens[1], tokens[2]
+    if node_a.lower() not in ('0', 'gnd') and node_b.lower() not in ('0', 'gnd'):
+        return ""
+    return f"{tokens[0]} {node_a}-{node_b} {tokens[3]}"
+
+
 def _summarize_netlist(raw_lines, netlist_path: str = ""):
     active_lines = []
     comment_lines = []
@@ -561,6 +577,8 @@ def _summarize_netlist(raw_lines, netlist_path: str = ""):
     models = []
     subckt_defs = []
     subckt_calls = []
+    voltage_sources = []
+    load_candidates = []
     tran_facts = []
     in_control_block = False
     netlist_dir = os.path.dirname(os.path.abspath(netlist_path)) if netlist_path else ""
@@ -623,6 +641,14 @@ def _summarize_netlist(raw_lines, netlist_path: str = ""):
         if first[0].upper() in 'RCLVIDQMEFGHJKTUWXZ':
             comp_nodes, model = _component_nodes_and_model(tokens)
             nodes.update(comp_nodes)
+            if first[0].upper() == 'V':
+                source_fact = _voltage_source_fact(tokens)
+                if source_fact:
+                    voltage_sources.append(source_fact)
+            if first[0].upper() == 'R':
+                load_fact = _load_candidate_fact(tokens)
+                if load_fact:
+                    load_candidates.append(load_fact)
             if model and first[0].upper() != 'X':
                 models.append(model)
             if first[0].upper() == 'X' and model:
@@ -658,6 +684,8 @@ def _summarize_netlist(raw_lines, netlist_path: str = ""):
         "models": sorted(set(models), key=lambda n: n.lower()),
         "subckt_defs": sorted(set(subckt_defs), key=lambda n: n.lower()),
         "subckt_calls": subckt_calls,
+        "voltage_sources": voltage_sources,
+        "load_candidates": load_candidates,
         "unresolved_subckt_calls": unresolved_subckt_calls,
         "reference_node_0_present": reference_node_0_present,
         "gnd_label_present": gnd_label_present,
@@ -718,6 +746,8 @@ def _build_netlist_prompt(netlist_path: str, raw_lines):
         _fact_line("MODEL_NAMES", facts["models"]),
         _fact_line("SUBCKT_DEFINITIONS", facts["subckt_defs"]),
         _fact_line("SUBCKT_CALLS", facts["subckt_calls"]),
+        _fact_line("VOLTAGE_SOURCES", facts["voltage_sources"]),
+        _fact_line("LOAD_CANDIDATES", facts["load_candidates"]),
         _fact_line("UNRESOLVED_SUBCKT_CALLS", facts["unresolved_subckt_calls"]),
         _fact_line("SPICE_REFERENCE_NODE_0_PRESENT", facts["reference_node_0_present"]),
         _fact_line("GND_LABEL_PRESENT", facts["gnd_label_present"]),
@@ -732,12 +762,28 @@ def _build_netlist_prompt(netlist_path: str, raw_lines):
         "- Treat the deterministic FACT lines as authoritative over your own interpretation.\n"
         "- List and explain only observed active component lines, directives, includes, nodes, "
         "models, and subcircuit calls.\n"
+        "- Put analysis directives, .control/.endc, run, print, plot, save, write, and "
+        "measurement commands in the Simulation setup and output commands section.\n"
         "- Lines in COMMENTED/IGNORED LINES are inactive SPICE comments. Do not describe them "
         "as executed commands, active plot commands, or active components.\n"
         "- If a circuit role is uncertain from the netlist, say what is observable and "
         "what cannot be determined.\n"
+        "- Do not state simulation success, failure, output voltage achieved, regulation "
+        "quality, waveform result, or implementation success unless simulation result data "
+        "is explicitly included in the provided text.\n"
+        "- Use phrases like 'appears intended', 'is likely intended', and 'from the netlist "
+        "only' for circuit-purpose interpretations.\n"
         "- Do not invent resistors, feedback networks, sensors, op-amps, capacitors, "
         "or sources that are not in COMPONENT_LINES or ACTIVE NETLIST.\n"
+        "- For sine, pulse, pwl, or other time-varying sources, describe the source syntax "
+        "from VOLTAGE_SOURCES or COMPONENT_LINES exactly. Do not call it a fixed DC input "
+        "unless the source syntax is a DC source.\n"
+        "- For lm7805 or LM7805, do not say it guarantees or ensures a stable 5V output. "
+        "Say it is intended to regulate near 5V if the model and input/load conditions "
+        "support that behavior.\n"
+        "- Do not describe a resistor as current-limiting unless deterministic facts prove "
+        "a current-limiting topology. A resistor from an output node to 0/gnd should be "
+        "described as a load candidate or load resistor.\n"
         "- Every X line is a subcircuit instance. It does not define a subcircuit.\n"
         "- Distinguish include files, subcircuit names, and model names. For example, "
         "lm7805.sub is an include file while lm7805 is a subcircuit name; D.lib is an "
@@ -756,11 +802,11 @@ def _build_netlist_prompt(netlist_path: str, raw_lines):
         "- For .tran, copy TRAN_TSTEP, TRAN_TSTOP, TRAN_TSTART, and TRAN_TMAX from TRAN_FIELDS. "
         "Do not reinterpret engineering notation yourself.\n\n"
         "Respond with these sections:\n"
-        "1. Observed netlist content\n"
-        "2. What this circuit appears to do from the netlist\n"
-        "3. Simulation setup and SPICE syntax notes\n"
-        "4. Possible issues from this netlist only\n"
-        "5. Summary\n\n"
+        "1. Verified facts from the netlist\n"
+        "2. Simulation setup and output commands\n"
+        "3. Likely circuit intent, with uncertainty\n"
+        "4. Possible issues based only on deterministic facts\n"
+        "5. Unknown / cannot determine from netlist alone\n\n"
         "[ESIM_NETLIST_START]\n"
         f"{fact_block}\n\n"
         "[ACTIVE NETLIST]\n"
