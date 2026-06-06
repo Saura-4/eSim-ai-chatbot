@@ -533,7 +533,7 @@ def _parse_tran_directive(line: str):
 def _include_status(include_token: str, netlist_dir: str):
     include_path = _normalize_include_path(include_token)
     if not include_path:
-        return f"{include_token} -> missing: empty include path", False
+        return f"{include_token}: MISSING empty include path", False
 
     if netlist_dir and not os.path.isabs(include_path):
         candidate = os.path.abspath(os.path.join(netlist_dir, include_path))
@@ -541,8 +541,8 @@ def _include_status(include_token: str, netlist_dir: str):
         candidate = include_path
 
     if os.path.exists(candidate):
-        return f"{include_token} -> found: {candidate}", True
-    return f"{include_token} -> missing: {candidate}", False
+        return f"{include_path}: FOUND at {candidate}", True
+    return f"{include_path}: MISSING at {candidate}", False
 
 
 def _summarize_netlist(raw_lines, netlist_path: str = ""):
@@ -558,7 +558,6 @@ def _summarize_netlist(raw_lines, netlist_path: str = ""):
     output_commands = []
     includes = []
     include_statuses = []
-    include_found = False
     models = []
     subckt_defs = []
     subckt_calls = []
@@ -611,9 +610,8 @@ def _summarize_netlist(raw_lines, netlist_path: str = ""):
 
             if lower_first == '.include' and len(tokens) >= 2:
                 includes.append(_normalize_include_path(tokens[1]))
-                status, found = _include_status(tokens[1], netlist_dir)
+                status, _ = _include_status(tokens[1], netlist_dir)
                 include_statuses.append(status)
-                include_found = include_found or found
             elif lower_first == '.model' and len(tokens) >= 2:
                 models.append(tokens[1])
             elif lower_first == '.subckt' and len(tokens) >= 2:
@@ -628,15 +626,17 @@ def _summarize_netlist(raw_lines, netlist_path: str = ""):
             if model and first[0].upper() != 'X':
                 models.append(model)
             if first[0].upper() == 'X' and model:
-                subckt_calls.append(f"{first} -> {model} ({', '.join(comp_nodes)})")
+                subckt_calls.append(
+                    f"{first} instantiates {model} with nodes ({', '.join(comp_nodes)})"
+                )
             component_lines.append(line)
 
     defined_subckts = {name.lower() for name in subckt_defs}
     unresolved_subckt_calls = []
     for call in subckt_calls:
-        match = re.match(r'^\S+\s+->\s+(\S+)', call)
+        match = re.match(r'^\S+\s+instantiates\s+(\S+)', call)
         subckt_name = match.group(1) if match else ""
-        if subckt_name and subckt_name.lower() not in defined_subckts and not include_found:
+        if subckt_name and subckt_name.lower() not in defined_subckts and not includes:
             unresolved_subckt_calls.append(call)
 
     reference_node_0_present = any(node == '0' for node in nodes)
@@ -713,9 +713,9 @@ def _build_netlist_prompt(netlist_path: str, raw_lines):
         _fact_line("CONTROL_BLOCK_LINES", facts["control_block_lines"]),
         _fact_line("CONTROL_COMMANDS", facts["control_commands"]),
         _fact_line("OUTPUT_COMMANDS", facts["output_commands"]),
-        _fact_line("INCLUDES", facts["includes"]),
-        _fact_line("INCLUDE_STATUSES", facts["include_statuses"]),
-        _fact_line("MODELS", facts["models"]),
+        _fact_line("INCLUDE_FILES", facts["includes"]),
+        _fact_line("INCLUDE_FILE_STATUSES", facts["include_statuses"]),
+        _fact_line("MODEL_NAMES", facts["models"]),
         _fact_line("SUBCKT_DEFINITIONS", facts["subckt_defs"]),
         _fact_line("SUBCKT_CALLS", facts["subckt_calls"]),
         _fact_line("UNRESOLVED_SUBCKT_CALLS", facts["unresolved_subckt_calls"]),
@@ -739,7 +739,15 @@ def _build_netlist_prompt(netlist_path: str, raw_lines):
         "- Do not invent resistors, feedback networks, sensors, op-amps, capacitors, "
         "or sources that are not in COMPONENT_LINES or ACTIVE NETLIST.\n"
         "- Every X line is a subcircuit instance. It does not define a subcircuit.\n"
-        "- Warn about missing include files only when INCLUDE_STATUSES contains missing.\n"
+        "- Distinguish include files, subcircuit names, and model names. For example, "
+        "lm7805.sub is an include file while lm7805 is a subcircuit name; D.lib is an "
+        "include file while 1N4148 can be a diode model name.\n"
+        "- Never append .sub to a subcircuit name unless .sub is literally part of the "
+        "X-line subcircuit token.\n"
+        "- When an X line uses a subcircuit that is expected from an include, say it "
+        "instantiates the subcircuit and that the definition is expected from the "
+        "included file; do not say the X line calls the include file.\n"
+        "- Warn about missing include files only when INCLUDE_FILE_STATUSES contains MISSING.\n"
         "- Warn about unresolved subcircuits only when UNRESOLVED_SUBCKT_CALLS is not NONE.\n"
         "- A .include line can plausibly provide subcircuit definitions; do not warn that an "
         "included subcircuit is missing unless UNRESOLVED_SUBCKT_CALLS says so.\n"
