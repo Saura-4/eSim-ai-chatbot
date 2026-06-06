@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QTextBrowser, QVBoxLayout,
     QLineEdit, QPushButton, QLabel, QComboBox, QApplication,
     QFileDialog, QDialog, QListWidget, QListWidgetItem, QFrame,
-    QScrollArea, QSlider, QInputDialog
+    QScrollArea, QSlider, QInputDialog, QDockWidget
 )
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QSize
 from PyQt5.QtGui import QTextCursor, QKeyEvent, QDragEnterEvent, QDropEvent
@@ -3040,3 +3040,16 @@ class ChatbotGUI(QWidget):
                 f"User: I got a simulation error. Here is the log:\n{combined_text}"
             )
             self.debug_ollama()
+
+
+def create_chatbot_dock(parent=None):
+    """Compatibility factory used by DockArea.chatbotEditor()."""
+    dock = QDockWidget("eSim AI Assistant", parent)
+    dock.setWidget(ChatbotGUI())
+    dock.setMinimumWidth(360)
+    dock.setFeatures(
+        QDockWidget.DockWidgetClosable |
+        QDockWidget.DockWidgetMovable |
+        QDockWidget.DockWidgetFloatable
+    )
+    return dock
