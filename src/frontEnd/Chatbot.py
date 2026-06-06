@@ -37,6 +37,8 @@ _IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif', '.webp'
 # 60 lines is enough for any meaningful error message while staying well inside
 # the context window even with history prepended.
 _MAX_ERROR_LOG_LINES = 60
+_MAX_NETLIST_CONTEXT_CHARS = 7000
+_MAX_NETLIST_FACT_ITEMS = 40
 # _save_history() is called after every bot response; without debouncing this
 # causes synchronous I/O on the main thread on every message.
 _SAVE_DEBOUNCE_MS = 5000
@@ -406,6 +408,160 @@ def _is_image_file(path: str) -> bool:
 
 
 # ── Smart input field ─────────────────────────────────────────────────────────
+
+def _strip_spice_inline_comment(line: str) -> str:
+    if ';' in line:
+        return line.split(';', 1)[0].strip()
+    return line.strip()
+
+
+def _component_nodes_and_model(tokens):
+    if len(tokens) < 2:
+        return [], ""
+
+    prefix = tokens[0][0].upper()
+    if prefix == 'X' and len(tokens) >= 3:
+        return tokens[1:-1], tokens[-1]
+    if prefix in 'RCLVID' and len(tokens) >= 3:
+        return tokens[1:3], tokens[3] if prefix == 'D' and len(tokens) > 3 else ""
+    if prefix in 'QJ' and len(tokens) >= 5:
+        return tokens[1:4], tokens[4]
+    if prefix == 'M' and len(tokens) >= 6:
+        return tokens[1:5], tokens[5]
+    if prefix in 'EG' and len(tokens) >= 5:
+        return tokens[1:5], ""
+    if prefix in 'FH' and len(tokens) >= 4:
+        return tokens[1:3], tokens[3]
+
+    return tokens[1:-1] if len(tokens) > 2 else tokens[1:], ""
+
+
+def _summarize_netlist(raw_lines):
+    components = []
+    nodes = set()
+    directives = []
+    includes = []
+    models = []
+    subckt_defs = []
+    subckt_calls = []
+
+    for raw in raw_lines:
+        line = _strip_spice_inline_comment(raw)
+        if not line or line.startswith('*'):
+            continue
+
+        tokens = line.split()
+        first = tokens[0]
+        lower_first = first.lower()
+
+        if first.startswith('.'):
+            directives.append(line)
+            if lower_first == '.include' and len(tokens) >= 2:
+                includes.append(tokens[1])
+            elif lower_first == '.model' and len(tokens) >= 2:
+                models.append(tokens[1])
+            elif lower_first == '.subckt' and len(tokens) >= 2:
+                subckt_defs.append(tokens[1])
+            continue
+
+        if first[0].upper() in 'RCLVIDQMEFGHJKTUWXZ':
+            comp_nodes, model = _component_nodes_and_model(tokens)
+            nodes.update(comp_nodes)
+            if model:
+                models.append(model)
+            if first[0].upper() == 'X' and model:
+                subckt_calls.append(f"{first} -> {model} ({', '.join(comp_nodes)})")
+            components.append(line)
+
+    analysis_directives = [
+        d for d in directives
+        if d.lower().startswith(('.op', '.dc', '.ac', '.tran'))
+    ]
+    has_ground = any(node.lower() in ('0', 'gnd') for node in nodes)
+
+    return {
+        "components": components,
+        "nodes": sorted(nodes, key=lambda n: n.lower()),
+        "directives": directives,
+        "includes": includes,
+        "models": sorted(set(models), key=lambda n: n.lower()),
+        "subckt_defs": sorted(set(subckt_defs), key=lambda n: n.lower()),
+        "subckt_calls": subckt_calls,
+        "analysis_directives": analysis_directives,
+        "has_ground": has_ground,
+    }
+
+
+def _fact_line(name, values):
+    if isinstance(values, bool):
+        rendered = "YES" if values else "NO"
+    elif isinstance(values, (list, tuple, set)):
+        values = list(values)
+        rendered = "NONE" if not values else " | ".join(values[:_MAX_NETLIST_FACT_ITEMS])
+        if len(values) > _MAX_NETLIST_FACT_ITEMS:
+            rendered += f" | ... ({len(values) - _MAX_NETLIST_FACT_ITEMS} more)"
+    else:
+        rendered = str(values)
+    return f"[FACT {name}={rendered}]"
+
+
+def _bounded_netlist_text(raw_lines):
+    raw_text = ''.join(raw_lines)
+    if len(raw_text) <= _MAX_NETLIST_CONTEXT_CHARS:
+        return raw_text, False
+    return raw_text[:_MAX_NETLIST_CONTEXT_CHARS], True
+
+
+def _build_netlist_prompt(netlist_path: str, raw_lines):
+    facts = _summarize_netlist(raw_lines)
+    raw_text, truncated = _bounded_netlist_text(raw_lines)
+    filename = os.path.basename(netlist_path)
+
+    fact_block = "\n".join([
+        _fact_line("NETLIST_FILE", filename),
+        _fact_line("NETLIST_PATH", netlist_path),
+        _fact_line("TOTAL_LINES", len(raw_lines)),
+        _fact_line("RAW_NETLIST_TRUNCATED", truncated),
+        _fact_line("COMPONENT_COUNT", len(facts["components"])),
+        _fact_line("COMPONENT_LINES", facts["components"]),
+        _fact_line("NODES", facts["nodes"]),
+        _fact_line("DIRECTIVES", facts["directives"]),
+        _fact_line("INCLUDES", facts["includes"]),
+        _fact_line("MODELS_OR_SUBCKTS_REFERENCED", facts["models"]),
+        _fact_line("SUBCKT_DEFINITIONS", facts["subckt_defs"]),
+        _fact_line("SUBCKT_CALLS", facts["subckt_calls"]),
+        _fact_line("GROUND_NODE_PRESENT", facts["has_ground"]),
+        _fact_line("ANALYSIS_DIRECTIVES", facts["analysis_directives"]),
+    ])
+
+    return (
+        "You are analyzing an eSim NgSpice netlist selected from Project Explorer.\n"
+        "Use ONLY the FACT block and RAW NETLIST below. Do not use the file name, "
+        "project name, or general circuit templates to add components that are not present.\n\n"
+        "Rules:\n"
+        "- List and explain only observed component lines, directives, includes, nodes, "
+        "models, and subcircuit calls.\n"
+        "- If a circuit role is uncertain from the netlist, say what is observable and "
+        "what cannot be determined.\n"
+        "- Do not invent resistors, feedback networks, sensors, op-amps, capacitors, "
+        "or sources that are not in COMPONENT_LINES or RAW NETLIST.\n"
+        "- An X line is a subcircuit instance. It does not define a subcircuit.\n"
+        "- For .tran, use NgSpice syntax: .tran Tstep Tstop Tstart [Tmax]. Tstep is "
+        "the print/time step, Tstop is stop time, and Tstart is the start time for saving data.\n"
+        "- Mention missing ground only when GROUND_NODE_PRESENT is NO.\n\n"
+        "Respond with these sections:\n"
+        "1. Observed netlist content\n"
+        "2. What this circuit appears to do from the netlist\n"
+        "3. Simulation setup and SPICE syntax notes\n"
+        "4. Possible issues from this netlist only\n"
+        "5. Summary\n\n"
+        "[ESIM_NETLIST_START]\n"
+        f"{fact_block}\n\n"
+        "[RAW NETLIST]\n"
+        f"{raw_text}"
+        "\n[ESIM_NETLIST_END]"
+    )
+
 
 class _HistoryLineEdit(QLineEdit):
     def __init__(self, *args, **kwargs):
@@ -2251,6 +2407,9 @@ class ChatbotGUI(QWidget):
 
     # ── Netlist analysis ─────────────────────────────────────────────
 
+    def analyze_specific_netlist(self, netlist_path: str):
+        self.analyse_netlist(netlist_path)
+
     def analyse_netlist(self, netlist_path: str):
         if not os.path.exists(netlist_path):
             self.chat_display.append(
@@ -2276,38 +2435,7 @@ class ChatbotGUI(QWidget):
             )
             return
 
-        components, nodes, directives = [], set(), []
-        for line in raw_lines:
-            s = line.strip()
-            if not s or s.startswith('*'):
-                continue
-            first = s[0].upper()
-            if first in 'RCLVIDQMEFGHJKTUWXZ':
-                components.append(s)
-                parts = s.split()
-                if len(parts) >= 3:
-                    nodes.update([parts[1], parts[2]])
-            elif first == '.':
-                directives.append(s)
-
-        summary = (
-            f"Netlist file: {filename}\n"
-            f"Total lines: {len(raw_lines)}\n"
-            f"Components ({len(components)}): "
-            f"{', '.join(components[:15])}{'...' if len(components) > 15 else ''}\n"
-            f"Unique nodes: {', '.join(sorted(nodes)[:20])}\n"
-            f"SPICE directives: {', '.join(directives[:10])}\n\n"
-            f"Full netlist:\n{''.join(raw_lines[:80])}"
-            f"{'[truncated]' if len(raw_lines) > 80 else ''}"
-        )
-
-        prompt = (
-            f"Analyse this NgSpice netlist for me.\n\n{summary}\n\n"
-            "Please: (1) identify all components and their roles, "
-            "(2) describe what circuit this is and what it does, "
-            "(3) highlight any potential simulation issues, "
-            "(4) suggest any improvements."
-        )
+        prompt = _build_netlist_prompt(netlist_path, raw_lines)
 
         self.chat_history = (self.chat_history + [f"User: {prompt}"])[-20:]
         self._retry_history = list(self.chat_history)
