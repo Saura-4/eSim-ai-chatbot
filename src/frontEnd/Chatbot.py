@@ -436,59 +436,232 @@ def _component_nodes_and_model(tokens):
     return tokens[1:-1] if len(tokens) > 2 else tokens[1:], ""
 
 
-def _summarize_netlist(raw_lines):
-    components = []
+def _normalize_include_path(token: str) -> str:
+    return token.strip().strip('"').strip("'")
+
+
+def _is_component_like_line(line: str) -> bool:
+    stripped = line.lstrip()
+    if stripped.startswith('*'):
+        stripped = stripped[1:].lstrip()
+    if not stripped:
+        return False
+    tokens = stripped.split()
+    first = tokens[0]
+    if first.startswith('.'):
+        return True
+
+    prefix = first[0].upper()
+    min_tokens = {
+        'R': 4, 'C': 4, 'L': 4, 'V': 4, 'I': 4, 'D': 4,
+        'Q': 5, 'J': 5, 'M': 6, 'E': 5, 'G': 5, 'F': 4,
+        'H': 4, 'K': 4, 'T': 4, 'U': 3, 'W': 4, 'X': 4,
+        'Z': 4,
+    }
+    return len(tokens) >= min_tokens.get(prefix, 99)
+
+
+def _spice_number_to_float(value: str):
+    text = value.strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+
+    match = re.match(r'^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)([a-z]+)$',
+                     text, re.IGNORECASE)
+    if not match:
+        return None
+
+    base = float(match.group(1))
+    suffix = match.group(2).lower()
+    scale = {
+        'f': 1e-15,
+        'p': 1e-12,
+        'n': 1e-9,
+        'u': 1e-6,
+        'm': 1e-3,
+        'k': 1e3,
+        'meg': 1e6,
+        'g': 1e9,
+        't': 1e12,
+    }.get(suffix)
+    return None if scale is None else base * scale
+
+
+def _format_seconds(seconds: float) -> str:
+    if seconds == 0:
+        return "0 s"
+
+    abs_seconds = abs(seconds)
+    units = [
+        (1.0, "s"),
+        (1e-3, "ms"),
+        (1e-6, "us"),
+        (1e-9, "ns"),
+        (1e-12, "ps"),
+    ]
+    for scale, unit in units:
+        value = seconds / scale
+        if abs_seconds >= scale and abs(value) < 1000:
+            return f"{value:g} {unit}"
+    return f"{seconds:g} s"
+
+
+def _format_time_fact(value: str) -> str:
+    seconds = _spice_number_to_float(value)
+    if seconds is None:
+        return value
+    return f"{value} = {seconds:g} s ({_format_seconds(seconds)})"
+
+
+def _parse_tran_directive(line: str):
+    tokens = line.split()
+    parsed = {"TRAN_RAW": line}
+    fields = [
+        ("TRAN_TSTEP", 1),
+        ("TRAN_TSTOP", 2),
+        ("TRAN_TSTART", 3),
+        ("TRAN_TMAX", 4),
+    ]
+    for name, index in fields:
+        if len(tokens) > index:
+            parsed[name] = _format_time_fact(tokens[index])
+    return parsed
+
+
+def _include_status(include_token: str, netlist_dir: str):
+    include_path = _normalize_include_path(include_token)
+    if not include_path:
+        return f"{include_token} -> missing: empty include path", False
+
+    if netlist_dir and not os.path.isabs(include_path):
+        candidate = os.path.abspath(os.path.join(netlist_dir, include_path))
+    else:
+        candidate = include_path
+
+    if os.path.exists(candidate):
+        return f"{include_token} -> found: {candidate}", True
+    return f"{include_token} -> missing: {candidate}", False
+
+
+def _summarize_netlist(raw_lines, netlist_path: str = ""):
+    active_lines = []
+    comment_lines = []
+    ignored_comment_component_like_lines = []
+    component_lines = []
     nodes = set()
-    directives = []
+    ordinary_directives = []
+    analysis_directives = []
+    control_block_lines = []
+    control_commands = []
+    output_commands = []
     includes = []
+    include_statuses = []
+    include_found = False
     models = []
     subckt_defs = []
     subckt_calls = []
+    tran_facts = []
+    in_control_block = False
+    netlist_dir = os.path.dirname(os.path.abspath(netlist_path)) if netlist_path else ""
 
     for raw in raw_lines:
+        stripped_raw = raw.strip()
+        if not stripped_raw:
+            continue
+
+        if stripped_raw.startswith('*'):
+            comment_lines.append(stripped_raw)
+            if _is_component_like_line(stripped_raw):
+                ignored_comment_component_like_lines.append(stripped_raw)
+            continue
+
         line = _strip_spice_inline_comment(raw)
-        if not line or line.startswith('*'):
+        if not line:
             continue
 
         tokens = line.split()
         first = tokens[0]
         lower_first = first.lower()
+        active_lines.append(line)
+
+        if in_control_block:
+            control_block_lines.append(line)
+            if lower_first != '.endc':
+                control_commands.append(line)
+                if lower_first in ('plot', 'print', 'wrdata', 'write', 'save', 'meas', 'measure'):
+                    output_commands.append(line)
+            if lower_first == '.endc':
+                in_control_block = False
+            continue
+
+        if lower_first == '.control':
+            control_block_lines.append(line)
+            in_control_block = True
+            continue
 
         if first.startswith('.'):
-            directives.append(line)
+            if lower_first in ('.op', '.dc', '.ac', '.tran', '.noise', '.tf', '.pz', '.sens'):
+                analysis_directives.append(line)
+                if lower_first == '.tran':
+                    tran_facts.append(_parse_tran_directive(line))
+            else:
+                ordinary_directives.append(line)
+
             if lower_first == '.include' and len(tokens) >= 2:
-                includes.append(tokens[1])
+                includes.append(_normalize_include_path(tokens[1]))
+                status, found = _include_status(tokens[1], netlist_dir)
+                include_statuses.append(status)
+                include_found = include_found or found
             elif lower_first == '.model' and len(tokens) >= 2:
                 models.append(tokens[1])
             elif lower_first == '.subckt' and len(tokens) >= 2:
                 subckt_defs.append(tokens[1])
+            elif lower_first in ('.plot', '.print', '.probe', '.save', '.meas', '.measure'):
+                output_commands.append(line)
             continue
 
         if first[0].upper() in 'RCLVIDQMEFGHJKTUWXZ':
             comp_nodes, model = _component_nodes_and_model(tokens)
             nodes.update(comp_nodes)
-            if model:
+            if model and first[0].upper() != 'X':
                 models.append(model)
             if first[0].upper() == 'X' and model:
                 subckt_calls.append(f"{first} -> {model} ({', '.join(comp_nodes)})")
-            components.append(line)
+            component_lines.append(line)
 
-    analysis_directives = [
-        d for d in directives
-        if d.lower().startswith(('.op', '.dc', '.ac', '.tran'))
-    ]
-    has_ground = any(node.lower() in ('0', 'gnd') for node in nodes)
+    defined_subckts = {name.lower() for name in subckt_defs}
+    unresolved_subckt_calls = []
+    for call in subckt_calls:
+        match = re.match(r'^\S+\s+->\s+(\S+)', call)
+        subckt_name = match.group(1) if match else ""
+        if subckt_name and subckt_name.lower() not in defined_subckts and not include_found:
+            unresolved_subckt_calls.append(call)
+
+    reference_node_0_present = any(node == '0' for node in nodes)
+    gnd_label_present = any(node.lower() == 'gnd' for node in nodes)
 
     return {
-        "components": components,
+        "active_lines": active_lines,
+        "comment_lines": comment_lines,
+        "ignored_comment_component_like_lines": ignored_comment_component_like_lines,
+        "component_lines": component_lines,
         "nodes": sorted(nodes, key=lambda n: n.lower()),
-        "directives": directives,
+        "ordinary_directives": ordinary_directives,
+        "analysis_directives": analysis_directives,
+        "control_block_lines": control_block_lines,
+        "control_commands": control_commands,
+        "output_commands": output_commands,
         "includes": includes,
+        "include_statuses": include_statuses,
         "models": sorted(set(models), key=lambda n: n.lower()),
         "subckt_defs": sorted(set(subckt_defs), key=lambda n: n.lower()),
         "subckt_calls": subckt_calls,
-        "analysis_directives": analysis_directives,
-        "has_ground": has_ground,
+        "unresolved_subckt_calls": unresolved_subckt_calls,
+        "reference_node_0_present": reference_node_0_present,
+        "gnd_label_present": gnd_label_present,
+        "tran_facts": tran_facts,
     }
 
 
@@ -506,49 +679,74 @@ def _fact_line(name, values):
 
 
 def _bounded_netlist_text(raw_lines):
-    raw_text = ''.join(raw_lines)
+    raw_text = "\n".join(raw_lines)
     if len(raw_text) <= _MAX_NETLIST_CONTEXT_CHARS:
         return raw_text, False
     return raw_text[:_MAX_NETLIST_CONTEXT_CHARS], True
 
 
 def _build_netlist_prompt(netlist_path: str, raw_lines):
-    facts = _summarize_netlist(raw_lines)
-    raw_text, truncated = _bounded_netlist_text(raw_lines)
+    facts = _summarize_netlist(raw_lines, netlist_path)
+    active_text, active_truncated = _bounded_netlist_text(facts["active_lines"])
+    comment_text, comment_truncated = _bounded_netlist_text(facts["comment_lines"])
     filename = os.path.basename(netlist_path)
+    tran_fact_lines = []
+    for tran in facts["tran_facts"]:
+        for name in ("TRAN_RAW", "TRAN_TSTEP", "TRAN_TSTOP", "TRAN_TSTART", "TRAN_TMAX"):
+            if name in tran:
+                tran_fact_lines.append(f"{name}: {tran[name]}")
 
     fact_block = "\n".join([
         _fact_line("NETLIST_FILE", filename),
         _fact_line("NETLIST_PATH", netlist_path),
         _fact_line("TOTAL_LINES", len(raw_lines)),
-        _fact_line("RAW_NETLIST_TRUNCATED", truncated),
-        _fact_line("COMPONENT_COUNT", len(facts["components"])),
-        _fact_line("COMPONENT_LINES", facts["components"]),
+        _fact_line("ACTIVE_LINES_TRUNCATED", active_truncated),
+        _fact_line("COMMENT_LINES_TRUNCATED", comment_truncated),
+        _fact_line("ACTIVE_LINE_COUNT", len(facts["active_lines"])),
+        _fact_line("COMMENT_LINE_COUNT", len(facts["comment_lines"])),
+        _fact_line("IGNORED_COMMENT_COMPONENT_LIKE_LINES", facts["ignored_comment_component_like_lines"]),
+        _fact_line("COMPONENT_COUNT", len(facts["component_lines"])),
+        _fact_line("COMPONENT_LINES", facts["component_lines"]),
         _fact_line("NODES", facts["nodes"]),
-        _fact_line("DIRECTIVES", facts["directives"]),
+        _fact_line("ORDINARY_DIRECTIVES", facts["ordinary_directives"]),
+        _fact_line("ANALYSIS_DIRECTIVES", facts["analysis_directives"]),
+        _fact_line("CONTROL_BLOCK_LINES", facts["control_block_lines"]),
+        _fact_line("CONTROL_COMMANDS", facts["control_commands"]),
+        _fact_line("OUTPUT_COMMANDS", facts["output_commands"]),
         _fact_line("INCLUDES", facts["includes"]),
-        _fact_line("MODELS_OR_SUBCKTS_REFERENCED", facts["models"]),
+        _fact_line("INCLUDE_STATUSES", facts["include_statuses"]),
+        _fact_line("MODELS", facts["models"]),
         _fact_line("SUBCKT_DEFINITIONS", facts["subckt_defs"]),
         _fact_line("SUBCKT_CALLS", facts["subckt_calls"]),
-        _fact_line("GROUND_NODE_PRESENT", facts["has_ground"]),
-        _fact_line("ANALYSIS_DIRECTIVES", facts["analysis_directives"]),
+        _fact_line("UNRESOLVED_SUBCKT_CALLS", facts["unresolved_subckt_calls"]),
+        _fact_line("SPICE_REFERENCE_NODE_0_PRESENT", facts["reference_node_0_present"]),
+        _fact_line("GND_LABEL_PRESENT", facts["gnd_label_present"]),
+        _fact_line("TRAN_FIELDS", tran_fact_lines),
     ])
 
     return (
         "You are analyzing an eSim NgSpice netlist selected from Project Explorer.\n"
-        "Use ONLY the FACT block and RAW NETLIST below. Do not use the file name, "
+        "Use ONLY the FACT block and ACTIVE NETLIST below. Do not use the file name, "
         "project name, or general circuit templates to add components that are not present.\n\n"
         "Rules:\n"
-        "- List and explain only observed component lines, directives, includes, nodes, "
+        "- Treat the deterministic FACT lines as authoritative over your own interpretation.\n"
+        "- List and explain only observed active component lines, directives, includes, nodes, "
         "models, and subcircuit calls.\n"
+        "- Lines in COMMENTED/IGNORED LINES are inactive SPICE comments. Do not describe them "
+        "as executed commands, active plot commands, or active components.\n"
         "- If a circuit role is uncertain from the netlist, say what is observable and "
         "what cannot be determined.\n"
         "- Do not invent resistors, feedback networks, sensors, op-amps, capacitors, "
-        "or sources that are not in COMPONENT_LINES or RAW NETLIST.\n"
-        "- An X line is a subcircuit instance. It does not define a subcircuit.\n"
-        "- For .tran, use NgSpice syntax: .tran Tstep Tstop Tstart [Tmax]. Tstep is "
-        "the print/time step, Tstop is stop time, and Tstart is the start time for saving data.\n"
-        "- Mention missing ground only when GROUND_NODE_PRESENT is NO.\n\n"
+        "or sources that are not in COMPONENT_LINES or ACTIVE NETLIST.\n"
+        "- Every X line is a subcircuit instance. It does not define a subcircuit.\n"
+        "- Warn about missing include files only when INCLUDE_STATUSES contains missing.\n"
+        "- Warn about unresolved subcircuits only when UNRESOLVED_SUBCKT_CALLS is not NONE.\n"
+        "- A .include line can plausibly provide subcircuit definitions; do not warn that an "
+        "included subcircuit is missing unless UNRESOLVED_SUBCKT_CALLS says so.\n"
+        "- Use 'SPICE reference node 0' only for node 0 and 'gnd label' only for a literal "
+        "gnd node label. Do not merge the two concepts.\n"
+        "- For .tran, copy TRAN_TSTEP, TRAN_TSTOP, TRAN_TSTART, and TRAN_TMAX from TRAN_FIELDS. "
+        "Do not reinterpret engineering notation yourself.\n\n"
         "Respond with these sections:\n"
         "1. Observed netlist content\n"
         "2. What this circuit appears to do from the netlist\n"
@@ -557,8 +755,10 @@ def _build_netlist_prompt(netlist_path: str, raw_lines):
         "5. Summary\n\n"
         "[ESIM_NETLIST_START]\n"
         f"{fact_block}\n\n"
-        "[RAW NETLIST]\n"
-        f"{raw_text}"
+        "[ACTIVE NETLIST]\n"
+        f"{active_text}\n\n"
+        "[COMMENTED/IGNORED LINES]\n"
+        f"{comment_text}"
         "\n[ESIM_NETLIST_END]"
     )
 
