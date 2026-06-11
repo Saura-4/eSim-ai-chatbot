@@ -25,6 +25,9 @@ from chatbot.chatbot_thread import (  # type: ignore
     detect_topic_switch, get_stt_backend,
     VISION_MODEL_KEYWORDS,  # EXTRACTED: shared constant, avoids duplicate keyword list
 )
+from chatbot.netlist_analysis import (  # type: ignore
+    build_netlist_summary_prompt, parse_spice_netlist,
+)
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QTextBrowser, QVBoxLayout,
     QLineEdit, QPushButton, QLabel, QComboBox, QApplication,
@@ -411,6 +414,20 @@ def _is_image_file(path: str) -> bool:
     return os.path.splitext(path)[1].lower() in _IMAGE_EXTS
 
 
+_NETLIST_HISTORY_PREFIX = "[Netlist analysis request:"
+
+
+def _display_user_history_text(text: str) -> str:
+    """Return the safe UI/export text for a stored user history entry."""
+    if text.startswith(_NETLIST_HISTORY_PREFIX):
+        end = text.find("]")
+        if end != -1:
+            filename = text[len(_NETLIST_HISTORY_PREFIX):end].strip()
+            return f"Netlist: {filename}" if filename else "Netlist analysis request"
+        return "Netlist analysis request"
+    return text
+
+
 # ── Smart input field ─────────────────────────────────────────────────────────
 
 class _HistoryLineEdit(QLineEdit):
@@ -545,7 +562,7 @@ class ChatHistoryViewer(QDialog):
         html = ""
         for line in msgs:
             if line.startswith("User:"):
-                html += _user_bubble(line[5:].strip(), "")
+                html += _user_bubble(_display_user_history_text(line[5:].strip()), "")
             elif line.startswith("Bot:"):
                 html += _bot_bubble(line[4:].strip(), "")
         browser.setHtml(html if html else "<p style='color:#aaa;text-align:center;padding:20px;'>No messages</p>")
@@ -978,7 +995,10 @@ class ChatSidebar(QWidget):
         for s in self._all_sessions_cache:
             title = s.get('title', 'Chat')
             msgs = s.get('messages', [])
-            preview = next((m[5:].strip() for m in msgs if m.startswith("User:")), "")
+            preview = next(
+                (_display_user_history_text(m[5:].strip()) for m in msgs if m.startswith("User:")),
+                ""
+            )
             kind = s.get('kind', 'text')
             haystack = f"{title} {preview} {kind}".lower()
             if not query or query in haystack:
@@ -996,7 +1016,10 @@ class ChatSidebar(QWidget):
             date = s.get('updated_at', '')[:10]
             msgs = s.get('messages', [])
             msg_count = sum(1 for m in msgs if m.startswith("User:"))
-            preview = next((m[5:].strip() for m in msgs if m.startswith("User:")), "")
+            preview = next(
+                (_display_user_history_text(m[5:].strip()) for m in msgs if m.startswith("User:")),
+                ""
+            )
             kind = s.get('kind', 'text')
 
             item = QListWidgetItem()
@@ -1580,7 +1603,8 @@ class ChatbotGUI(QWidget):
         if self._session_title_override:
             return self._session_title_override
         return next(
-            (m[5:].strip()[:50] for m in self.chat_history if m.startswith("User:")),
+            (_display_user_history_text(m[5:].strip())[:50]
+             for m in self.chat_history if m.startswith("User:")),
             "Chat"
         )
 
@@ -1591,7 +1615,9 @@ class ChatbotGUI(QWidget):
 
         for line in self.chat_history:
             if line.startswith("User:"):
-                self.chat_display.append(_user_bubble(line[5:].strip(), ""))
+                self.chat_display.append(
+                    _user_bubble(_display_user_history_text(line[5:].strip()), "")
+                )
             elif line.startswith("Bot:"):
                 idx = self._response_counter
                 text = line[4:].strip()
@@ -1707,7 +1733,7 @@ class ChatbotGUI(QWidget):
                     if user_text_part and not user_text_part.startswith("[Image"):
                         html += _user_bubble(user_text_part, "")
                 else:
-                    html += _user_bubble(text, "")
+                    html += _user_bubble(_display_user_history_text(text), "")
             elif line.startswith("Bot:"):
                 text = line[4:].strip()
                 self._bot_responses[local_counter] = text
@@ -1793,7 +1819,7 @@ class ChatbotGUI(QWidget):
                     session = {
                         "id":         _sid,
                         "title":      next(
-                            (m[5:].strip()[:50] for m in _history
+                            (_display_user_history_text(m[5:].strip())[:50] for m in _history
                              if m.startswith("User:")), "Chat"
                         ),
                         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1896,7 +1922,10 @@ class ChatbotGUI(QWidget):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 for line in self.chat_history:
-                    f.write(line.strip() + "\n\n")
+                    if line.startswith("User:"):
+                        f.write(f"User: {_display_user_history_text(line[5:].strip())}\n\n")
+                    else:
+                        f.write(line.strip() + "\n\n")
             self.status_label.setText("✅ Chat exported.")
             QTimer.singleShot(2500, lambda: self.status_label.setText(""))
         except Exception as e:
@@ -2296,6 +2325,9 @@ class ChatbotGUI(QWidget):
 
     # ── Netlist analysis ─────────────────────────────────────────────
 
+    def analyze_specific_netlist(self, netlist_path: str):
+        self.analyse_netlist(netlist_path)
+
     def analyse_netlist(self, netlist_path: str):
         if not os.path.exists(netlist_path):
             self.chat_display.append(
@@ -2321,40 +2353,17 @@ class ChatbotGUI(QWidget):
             )
             return
 
-        components, nodes, directives = [], set(), []
-        for line in raw_lines:
-            s = line.strip()
-            if not s or s.startswith('*'):
-                continue
-            first = s[0].upper()
-            if first in 'RCLVIDQMEFGHJKTUWXZ':
-                components.append(s)
-                parts = s.split()
-                if len(parts) >= 3:
-                    nodes.update([parts[1], parts[2]])
-            elif first == '.':
-                directives.append(s)
-
-        summary = (
-            f"Netlist file: {filename}\n"
-            f"Total lines: {len(raw_lines)}\n"
-            f"Components ({len(components)}): "
-            f"{', '.join(components[:15])}{'...' if len(components) > 15 else ''}\n"
-            f"Unique nodes: {', '.join(sorted(nodes)[:20])}\n"
-            f"SPICE directives: {', '.join(directives[:10])}\n\n"
-            f"Full netlist:\n{''.join(raw_lines[:80])}"
-            f"{'[truncated]' if len(raw_lines) > 80 else ''}"
-        )
-
-        prompt = (
-            f"Analyse this NgSpice netlist for me.\n\n{summary}\n\n"
-            "Please: (1) identify all components and their roles, "
-            "(2) describe what circuit this is and what it does, "
-            "(3) highlight any potential simulation issues, "
-            "(4) suggest any improvements."
-        )
-
-        self.chat_history = (self.chat_history + [f"User: {prompt}"])[-20:]
+        try:
+            parsed_netlist = parse_spice_netlist(raw_lines, netlist_path)
+            prompt = build_netlist_summary_prompt(parsed_netlist, raw_lines)
+        except Exception as e:
+            self.chat_display.append(
+                f'<table width="100%"><tr><td style="color:#c00;font-size:12px;padding:6px;">'
+                f'âŒ Could not parse netlist: {_escape_text_preserve_breaks(str(e))}</td></tr></table>'
+            )
+            return
+        user_history_text = f"[Netlist analysis request: {filename}]\n{prompt}"
+        self.chat_history = (self.chat_history + [f"User: {user_history_text}"])[-20:]
         self._retry_history = list(self.chat_history)
         self._last_user_text = prompt
         self._start_thinking()
@@ -2478,7 +2487,8 @@ class ChatbotGUI(QWidget):
             # Session file is missing (crash recovery path): recreate it.
             if isinstance(messages, list) and messages:
                 title = next(
-                    (m[5:].strip()[:50] for m in messages if m.startswith("User:")),
+                    (_display_user_history_text(m[5:].strip())[:50]
+                     for m in messages if m.startswith("User:")),
                     "Previous session"
                 )
                 # Use the stored session_id when available so the recovered
@@ -2894,7 +2904,6 @@ class ChatbotGUI(QWidget):
         # switch to the Qwen model. Since Qwen cannot process images,
         # we must drop any previous image context and use the text worker.
         self._last_image_paths.clear()
-        
         self._current_session_kind = "text"
         self._switch_to_text_model()
 
