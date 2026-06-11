@@ -54,6 +54,10 @@ def test_7805_fixture():
 
     prompt = build_netlist_summary_prompt(parsed, raw_lines)
     assert "[FACT COMPONENT_LINES=" in prompt
+    assert "[FACT CURRENT_SOURCE_COUNT=0]" in prompt
+    assert "Allowed content for section 4" in prompt
+    assert "Do not mention temperature" in prompt
+    assert "do not claim the definition is missing" in prompt
     assert "describe what circuit this is and what it does" not in prompt
     assert "Please: (1)" not in prompt
     assert "Unknown / cannot determine from netlist alone" in prompt

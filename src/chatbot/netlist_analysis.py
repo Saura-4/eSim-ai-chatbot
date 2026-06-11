@@ -238,12 +238,27 @@ def build_netlist_summary_prompt(
         "- Distinguish include files, model names, and subcircuit names.\n"
         "- Warn about missing include files only when INCLUDE_FILE_STATUSES says MISSING.\n"
         "- Warn about unresolved subcircuits only when UNRESOLVED_SUBCKT_CALLS is not NONE.\n"
+        "- If an include file is FOUND, say the external definition is expected from "
+        "that include; do not claim the definition is missing just because it is not "
+        "inline in the selected netlist.\n"
         "- Do not state simulation success, output voltage, regulation quality, "
         "waveform results, or temperature behavior unless those facts are present.\n"
+        "- Do not mention temperature, thermal stability, thermal models, switching "
+        "mode, missing load-current analysis, or design improvements unless an active "
+        "netlist line or deterministic fact explicitly contains that topic.\n"
+        "- Do not invent current sources. A current source exists only if "
+        "CURRENT_SOURCE_COUNT is greater than 0.\n"
         "- If circuit purpose is uncertain from the netlist alone, say what is "
         "observable and what cannot be determined.\n"
         "- For .tran, copy the extracted timing fields; do not reinterpret notation "
         "without the provided parsed value.\n\n"
+        "Allowed content for section 4:\n"
+        "- Missing include files when INCLUDE_FILE_STATUSES says MISSING.\n"
+        "- Unresolved subcircuits when UNRESOLVED_SUBCKT_CALLS is not NONE.\n"
+        "- Missing SPICE reference node only when both SPICE_REFERENCE_NODE_0_PRESENT "
+        "and GND_LABEL_PRESENT are NO.\n"
+        "- Missing analysis directive only when ANALYSIS_DIRECTIVES is NONE.\n"
+        "- Otherwise say no deterministic issues are obvious from the provided facts.\n\n"
         "Respond with exactly these sections:\n"
         "1. Verified facts from the netlist\n"
         "2. Simulation setup and output commands\n"
@@ -267,6 +282,7 @@ def build_netlist_facts(parsed: ParsedNetlist, raw_lines: Sequence[str]) -> List
         for item in parsed.includes
     ]
     component_lines = [component.raw for component in parsed.components]
+    component_type_counts = _component_type_counts(parsed.components)
     subckt_calls = [
         f"{call.reference} instantiates {call.subcircuit} with nodes ({', '.join(call.nodes)})"
         for call in parsed.subckt_calls
@@ -289,6 +305,8 @@ def build_netlist_facts(parsed: ParsedNetlist, raw_lines: Sequence[str]) -> List
         _fact_line("COMMENT_LINE_COUNT", len(parsed.comment_lines)),
         _fact_line("IGNORED_COMMENT_COMPONENT_LIKE_LINES", parsed.ignored_comment_component_like_lines),
         _fact_line("COMPONENT_COUNT", len(parsed.components)),
+        _fact_line("COMPONENT_TYPE_COUNTS", component_type_counts),
+        _fact_line("CURRENT_SOURCE_COUNT", component_type_counts.get("I", 0)),
         _fact_line("COMPONENT_LINES", component_lines),
         _fact_line("NODES", parsed.nodes),
         _fact_line("ORDINARY_DIRECTIVES", parsed.ordinary_directives),
@@ -308,6 +326,13 @@ def build_netlist_facts(parsed: ParsedNetlist, raw_lines: Sequence[str]) -> List
         _fact_line("GND_LABEL_PRESENT", parsed.gnd_label_present),
         _fact_line("TRAN_FIELDS", tran_fields),
     ]
+
+
+def _component_type_counts(components: Sequence[ComponentFact]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for component in components:
+        counts[component.prefix] = counts.get(component.prefix, 0) + 1
+    return counts
 
 
 def _logical_lines(raw_lines: Sequence[str]) -> Iterable[str]:
