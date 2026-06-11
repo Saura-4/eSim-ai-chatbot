@@ -126,7 +126,7 @@ class ProjectExplorer(QtWidgets.QWidget):
             analyze_action = menu.addAction("Analyze Project Netlist")
 
             project_name = item.text(0)
-            netlist_path = os.path.join(file_path, f"{project_name}.cir.out")
+            netlist_path = self._find_project_netlist(file_path, project_name)
             analyze_action.triggered.connect(lambda: self._analyze_netlist_in_copilot(netlist_path))
             
             rename_action = menu.addAction("Rename Project")
@@ -450,29 +450,75 @@ class ProjectExplorer(QtWidgets.QWidget):
                     )
                     msg.exec_()
 
+    def _find_project_netlist(self, project_path: str, project_name: str) -> str:
+        """Return the best netlist path for a project folder."""
+        candidates = [
+            os.path.join(project_path, f"{project_name}.cir.out"),
+            os.path.join(project_path, f"{project_name}.cir"),
+        ]
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+
+        try:
+            project_files = os.listdir(project_path)
+        except OSError:
+            return candidates[0]
+
+        for suffix in (".cir.out", ".cir"):
+            for filename in project_files:
+                if filename.endswith(suffix):
+                    return os.path.join(project_path, filename)
+
+        return candidates[0]
+
+    def _get_chatbot_widget(self, main_window):
+        """Find the AI assistant widget regardless of dock title wording."""
+        chatbot_widget = getattr(main_window, 'chatbot_window', None)
+        if chatbot_widget is not None:
+            return chatbot_widget, getattr(main_window, 'chatbot_dock', None)
+
+        for dock in main_window.findChildren(QDockWidget):
+            widget = dock.widget()
+            if widget is None:
+                continue
+            if hasattr(widget, 'analyse_netlist') or hasattr(widget, 'analyze_specific_netlist'):
+                return widget, dock
+
+            title = dock.windowTitle().lower()
+            if "ai assistant" in title or "copilot" in title or "chatbot" in title:
+                return widget, dock
+
+        return None, None
+
     def _analyze_netlist_in_copilot(self, netlist_path: str):
-        """Send selected .cir file to chatbot for analysis."""
+        """Send selected .cir/.cir.out file to the AI assistant for analysis."""
         try:
             # Get the main Application window (traverse up the widget hierarchy)
             main_window = self
             while main_window.parent() is not None:
                 main_window = main_window.parent()
             
-            # Find the chatbot dock
-            for dock in main_window.findChildren(QDockWidget):
-                if "Copilot" in dock.windowTitle():
-                    chatbot_widget = dock.widget()
-                    if hasattr(chatbot_widget, 'analyze_specific_netlist'):
-                        chatbot_widget.analyze_specific_netlist(netlist_path)
-                        # Show the dock if it's hidden
-                        if not dock.isVisible():
-                            dock.show()
-                        return
+            chatbot_widget, dock = self._get_chatbot_widget(main_window)
+            if chatbot_widget is not None:
+                analyze_method = getattr(
+                    chatbot_widget,
+                    'analyse_netlist',
+                    getattr(chatbot_widget, 'analyze_specific_netlist', None)
+                )
+                if analyze_method is not None:
+                    if dock is not None and not dock.isVisible():
+                        dock.show()
+                    analyze_method(netlist_path)
+                    if dock is not None:
+                        dock.raise_()
+                    return
             
             QMessageBox.information(
                 self,
-                "Chatbot not open",
-                "Please open the eSim Copilot window first (View → eSim Copilot)."
+                "AI Assistant not available",
+                "Please open the eSim AI Assistant window first."
             )
         except Exception as e:
             print(f"[COPILOT] Failed to trigger analysis: {e}")
