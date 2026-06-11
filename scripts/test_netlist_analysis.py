@@ -57,9 +57,14 @@ def test_7805_fixture():
     assert "[FACT CURRENT_SOURCE_COUNT=0]" in prompt
     assert "Allowed content for section 4" in prompt
     assert "Do not mention temperature" in prompt
+    assert "Do not say LM7805 will provide" in prompt
+    assert "Do not use datasheet knowledge" in prompt
+    assert "Do not include recommendations" in prompt
+    assert "Observed topology only" in prompt
     assert "do not claim the definition is missing" in prompt
     assert "describe what circuit this is and what it does" not in prompt
     assert "Please: (1)" not in prompt
+    assert "Likely circuit intent" not in prompt
     assert "Unknown / cannot determine from netlist alone" in prompt
 
 
