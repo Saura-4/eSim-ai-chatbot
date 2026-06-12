@@ -2359,7 +2359,7 @@ class ChatbotGUI(QWidget):
         except Exception as e:
             self.chat_display.append(
                 f'<table width="100%"><tr><td style="color:#c00;font-size:12px;padding:6px;">'
-                f'âŒ Could not parse netlist: {_escape_text_preserve_breaks(str(e))}</td></tr></table>'
+                f'Could not parse netlist: {_escape_text_preserve_breaks(str(e))}</td></tr></table>'
             )
             return
         user_history_text = f"[Netlist analysis request: {filename}]\n{prompt}"
@@ -2767,8 +2767,13 @@ class ChatbotGUI(QWidget):
         self._rebuild_chat_html_from_history()
         self._start_thinking()
 
-        # EXTRACTED: helper method to launch OllamaWorker
-        self._launch_text_worker(self._retry_history)
+        last_user = self.chat_history[-1]
+        followup_paths = [p for p in self._last_image_paths if os.path.exists(p)]
+        if followup_paths and "[Image analysis request:" in last_user:
+            prompt = last_user.split("\n", 1)[-1].strip() if "\n" in last_user else ""
+            self._launch_vision_worker(followup_paths, prompt)
+        else:
+            self._launch_text_worker(self._retry_history)
 
     def _on_status_update(self, msg: str):
         self.status_label.setText(msg)
@@ -3026,13 +3031,17 @@ class ChatbotGUI(QWidget):
                 (i for i, ln in enumerate(lines) if "Total CPU time (seconds)" in ln), None
             )
 
-            before_no_compat = lines[:no_compat_index] if no_compat_index else []
+            before_no_compat = (
+                lines[:no_compat_index] if no_compat_index is not None else []
+            )
             between = (
                 lines[circuit_index + 1:total_cpu_index]
                 if circuit_index is not None and total_cpu_index is not None
                 else []
             )
             filtered_lines = before_no_compat + between
+            if not filtered_lines:
+                filtered_lines = lines
             # before sending to the model.  NgSpice logs can be 10-50 KB; sending
             # all of it blows past num_ctx: 2048 and makes the model ignore the
             # actual error.  The most actionable errors always appear at the end.
@@ -3065,3 +3074,11 @@ class ChatbotGUI(QWidget):
                 f"User: I got a simulation error. Here is the log:\n{combined_text}"
             )
             self.debug_ollama()
+        else:
+            message = f"Could not find ngspice error log: {log}"
+            self.status_label.setText(message)
+            self.chat_display.append(
+                f'<table width="100%"><tr><td style="color:#c00;font-size:12px;padding:6px;">'
+                f'{_escape_text_preserve_breaks(message)}</td></tr></table>'
+            )
+            self._scroll_to_bottom()

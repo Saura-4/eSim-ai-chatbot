@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import socket
 import subprocess
@@ -62,30 +63,34 @@ def _downscale_image_bytes(raw_bytes: bytes) -> bytes:
 
 
 def get_stt_backend() -> str:
-    """Return the best available speech-to-text backend.
+    """Return the configured speech-to-text backend.
 
-    Priority: faster-whisper (offline, best quality) > vosk (offline, lightweight)
-    > google (online, no install) > none
+    Defaults to local/offline backends. Google STT is online and requires
+    explicit opt-in with ESIM_ENABLE_ONLINE_STT=1.
     """
-    # Check faster-whisper first: offline, no internet needed
-    try:
-        import faster_whisper  # noqa: F401
-        return "whisper"
-    except ImportError:
-        pass
+    if not _SR_AVAILABLE:
+        return "none"
 
-    # Check vosk: offline, very lightweight
     try:
         import vosk  # noqa: F401
-        return "vosk"
+        if os.path.isdir(os.environ.get("VOSK_MODEL_PATH", "")):
+            return "vosk"
     except ImportError:
         pass
 
-    # Fall back to Google online STT (requires internet)
-    if _SR_AVAILABLE:
+    if _online_stt_enabled():
         return "google"
 
     return "none"
+
+
+def _online_stt_enabled() -> bool:
+    return os.environ.get("ESIM_ENABLE_ONLINE_STT", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def is_ollama_running():
@@ -630,10 +635,19 @@ class MicWorker(QThread):
     status_signal = pyqtSignal(str)
 
     def run(self):
-        """Record from microphone and transcribe using Google Speech Recognition."""
+        """Record from microphone and transcribe with the configured backend."""
         if not _SR_AVAILABLE:
             self.error_signal.emit(
                 "SpeechRecognition not installed.\nRun:  pip install SpeechRecognition pyaudio"
+            )
+            return
+
+        backend = get_stt_backend()
+        if backend == "none":
+            self.error_signal.emit(
+                "No offline speech-to-text backend is configured.\n"
+                "Install Vosk and set VOSK_MODEL_PATH, or explicitly enable online "
+                "Google STT with ESIM_ENABLE_ONLINE_STT=1."
             )
             return
 
@@ -658,7 +672,37 @@ class MicWorker(QThread):
             self.error_signal.emit(f"🎤 Microphone error: {str(e)}")
             return
 
-        self._transcribe_google(audio)
+        if backend == "vosk":
+            self._transcribe_vosk(audio)
+        elif backend == "google":
+            self._transcribe_google(audio)
+        else:
+            self.error_signal.emit(f"Unsupported STT backend: {backend}")
+
+    def _transcribe_vosk(self, audio):
+        try:
+            import vosk
+
+            model_path = os.environ.get("VOSK_MODEL_PATH", "")
+            if not os.path.isdir(model_path):
+                self.error_signal.emit(
+                    "Vosk model not found. Set VOSK_MODEL_PATH to the model directory."
+                )
+                return
+
+            self.status_signal.emit("Processing speech offline (vosk)...")
+            model = vosk.Model(model_path)
+            recognizer = vosk.KaldiRecognizer(model, 16000)
+            raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+            recognizer.AcceptWaveform(raw)
+            result = json.loads(recognizer.FinalResult())
+            text = result.get("text", "").strip()
+            if text:
+                self.text_signal.emit(text)
+            else:
+                self.error_signal.emit("Could not understand speech -- please try again.")
+        except Exception as e:
+            self.error_signal.emit(f"Offline STT error: {str(e)}")
 
     def _transcribe_google(self, audio):
         try:
@@ -674,7 +718,7 @@ class MicWorker(QThread):
         except sr.RequestError as e:
             self.error_signal.emit(
                 f"🎤 Online STT failed: {e}\n"
-                "Install offline STT: pip install faster-whisper"
+                "Install offline STT: pip install vosk and set VOSK_MODEL_PATH"
             )
         except Exception as e:
             self.error_signal.emit(f"🎤 STT error: {str(e)}")
