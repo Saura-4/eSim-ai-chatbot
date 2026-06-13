@@ -55,13 +55,11 @@ def test_7805_fixture():
     prompt = build_netlist_summary_prompt(parsed, raw_lines)
     assert "[FACT COMPONENT_LINES=" in prompt
     assert "[FACT CURRENT_SOURCE_COUNT=0]" in prompt
-    assert "Allowed content for section 4" in prompt
-    assert "Do not mention temperature" in prompt
-    assert "Do not say LM7805 will provide" in prompt
-    assert "Do not use datasheet knowledge" in prompt
-    assert "Do not include recommendations" in prompt
+    assert "Use the deterministic facts and bounded netlist text below as the source of truth." in prompt
+    assert "Do not invent components, current sources, voltages, simulation results" in prompt
+    assert "Keep the response concise and concrete." in prompt
     assert "Observed topology only" in prompt
-    assert "do not claim the definition is missing" in prompt
+    assert "do not call its definition missing" in prompt
     assert "describe what circuit this is and what it does" not in prompt
     assert "Please: (1)" not in prompt
     assert "Likely circuit intent" not in prompt

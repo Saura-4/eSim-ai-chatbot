@@ -2232,7 +2232,16 @@ class ChatbotGUI(QWidget):
     def _warn_or_switch_to_vision_model(self) -> bool:
         """Ensure a vision model is active before sending images."""
         # MERGED: uses shared VISION_MODEL_KEYWORDS from chatbot_thread
-        preferred = ["llava:latest", "llava", "llava:7b", "llava:13b", "bakllava", "moondream"]
+        preferred = [
+            "qwen3:2.5b",
+            "gemma3:4b",
+            "llava:latest",
+            "llava",
+            "llava:7b",
+            "llava:13b",
+            "bakllava",
+            "moondream",
+        ]
         idx = self._auto_switch_model(VISION_MODEL_KEYWORDS, preferred, "vision")
         if idx >= 0:
             return True

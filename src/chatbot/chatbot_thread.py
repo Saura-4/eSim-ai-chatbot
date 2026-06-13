@@ -400,15 +400,29 @@ class OllamaWorker(QThread):
 
 # EXTRACTED: single source of truth for vision-model keywords.
 # Imported by Chatbot.py so both files share the same list.
-VISION_MODEL_KEYWORDS = ["llava", "bakllava", "vision", "moondream", "minicpm-v", "qwen2-vl"]
-
+VISION_MODEL_KEYWORDS = [
+    "llava",
+    "bakllava",
+    "vision",
+    "moondream",
+    "minicpm-v",
+    "qwen2-vl",
+    "qwen2.5-vl",
+    "qwen2.5vl",
+    "qwen-vl",
+    "qwen3",
+    "gemma3",
+]
 
 def _is_vision_model(model_name: str) -> bool:
     if not model_name:
         return False
     m = model_name.lower()
-    # MERGED: uses shared VISION_MODEL_KEYWORDS constant
-    return any(k in m for k in VISION_MODEL_KEYWORDS)
+    if any(k in m for k in VISION_MODEL_KEYWORDS):
+        return True
+    if m.endswith("-vision") or m.endswith(":vision"):
+        return True
+    return False
 # QThread reads/writes don't produce a data race.
 _cache_lock = threading.Lock()
 _installed_models_cache: list = []
@@ -449,6 +463,17 @@ def _pick_best_vision_model(preferred: str = "") -> str:
     # If the user explicitly selected a vision model, respect that choice first
     if preferred and _is_vision_model(preferred):
         return preferred
+
+    if preferred:
+        normalized_preferred = preferred.lower()
+        for name in cache_copy:
+            if name.lower() == normalized_preferred and _is_vision_model(name):
+                return name
+
+        for name in cache_copy:
+            if name.lower() == normalized_preferred and any(
+                    token in normalized_preferred for token in ("qwen", "gemma", "vl", "vision")):
+                return name
 
     # Prefer smaller/faster models for speed on CPU
     speed_order = [
