@@ -212,6 +212,12 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
     )
 
 
+NETLIST_SYSTEM_PROMPT = (
+    "You are an expert electronics engineer assistant. "
+    "Your task is to summarize SPICE netlists based strictly on the provided facts and netlist text."
+)
+
+
 def build_netlist_summary_prompt(
         parsed: ParsedNetlist, raw_lines: Sequence[str]) -> str:
     """Build a hidden grounding prompt for the LLM from deterministic facts."""
@@ -225,31 +231,15 @@ def build_netlist_summary_prompt(
     ])
 
     return (
-        "You are analyzing an eSim NgSpice netlist selected from Project Explorer.\n"
-        "Use the deterministic facts and bounded netlist text below as the source of truth. "
-        "Stay grounded in what is explicitly present. If something is not supported by the "
-        "facts or lines, say it is unknown.\n\n"
-        "Output rules:\n"
-        "- Write a plain user-facing summary. Do not show internal [FACT ...] labels.\n"
-        "- Use exactly these five numbered headings and no extra headings.\n"
-        "- Treat commented lines as inactive.\n"
-        "- Treat every X line as a subcircuit instance, not a subcircuit definition.\n"
-        "- Do not invent components, current sources, voltages, simulation results, "
-        "datasheet behavior, temperature behavior, or design advice.\n"
-        "- If an include file is FOUND, do not call its definition missing just because "
-        "it is not inline.\n"
-        "- In section 4, mention only deterministic issues such as missing include files, "
-        "unresolved subcircuits, missing reference ground, or missing analysis directives. "
-        "Otherwise say no deterministic issues are obvious from the provided facts.\n"
-        "- In section 5, list what cannot be concluded from the selected netlist alone.\n\n"
-        "Keep the response concise and concrete.\n\n"
-        "Use exactly this structure:\n"
-        "1. Verified facts from the netlist\n"
-        "2. Simulation setup and output commands\n"
-        "3. Observed topology only\n"
-        "4. Possible issues based only on deterministic facts\n"
-        "5. Unknown / cannot determine from netlist alone\n\n"
-        "[ESIM_NETLIST_FACTS]\n"
+        "Below are the deterministic facts (formatted in YAML) and the raw netlist text of a SPICE circuit.\n"
+        "Analyze them and write a brief report using exactly these 3 sections:\n\n"
+        "1. Circuit Summary (What components and subcircuits are present)\n"
+        "2. Simulation Setup (Is there a simulation command like .tran or .ac configured?)\n"
+        "3. Obvious Issues (Are there unresolved subcircuits, missing ground '0/gnd', or missing directives?)\n\n"
+        "Rule: If something is not explicitly listed in the facts or netlist text, state that it is unknown. "
+        "Do not assume or extrapolate.\n\n"
+        "---\n"
+        "[YAML FACTS]\n"
         f"{fact_block}\n"
         f"{truncation_facts}\n\n"
         "[ACTIVE NETLIST]\n"
@@ -498,15 +488,18 @@ def _load_candidate_fact(tokens: Sequence[str]) -> str:
 
 def _fact_line(name: str, values) -> str:
     if isinstance(values, bool):
-        rendered = "YES" if values else "NO"
+        rendered = "Yes" if values else "No"
     elif isinstance(values, (list, tuple, set)):
         values = list(values)
-        rendered = "NONE" if not values else " | ".join(str(v) for v in values[:MAX_NETLIST_FACT_ITEMS])
+        rendered = "None" if not values else ", ".join(str(v) for v in values[:MAX_NETLIST_FACT_ITEMS])
         if len(values) > MAX_NETLIST_FACT_ITEMS:
-            rendered += f" | ... ({len(values) - MAX_NETLIST_FACT_ITEMS} more)"
+            rendered += f", ... ({len(values) - MAX_NETLIST_FACT_ITEMS} more)"
     else:
         rendered = str(values)
-    return f"[FACT {name}={rendered}]"
+    
+    # Format name nicely (e.g. replace underscores with spaces and title case)
+    formatted_name = name.replace("_", " ").title()
+    return f"{formatted_name}: {rendered}"
 
 
 def _bounded_text(lines: Sequence[str]) -> Tuple[str, bool]:

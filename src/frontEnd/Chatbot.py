@@ -26,7 +26,7 @@ from chatbot.chatbot_thread import (  # type: ignore
     VISION_MODEL_KEYWORDS,  # EXTRACTED: shared constant, avoids duplicate keyword list
 )
 from chatbot.netlist_analysis import (  # type: ignore
-    build_netlist_summary_prompt, parse_spice_netlist,
+    build_netlist_summary_prompt, parse_spice_netlist, NETLIST_SYSTEM_PROMPT,
 )
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QTextBrowser, QVBoxLayout,
@@ -2378,7 +2378,7 @@ class ChatbotGUI(QWidget):
         self._start_thinking()
 
         # EXTRACTED: helper method to launch OllamaWorker
-        self._launch_text_worker(self.chat_history)
+        self._launch_text_worker(self.chat_history, system_prompt=NETLIST_SYSTEM_PROMPT)
 
     # ── Topic switch ─────────────────────────────────────────────────
 
@@ -2673,13 +2673,14 @@ class ChatbotGUI(QWidget):
         self._current_session_id = str(uuid.uuid4())
         self._session_created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    def _launch_text_worker(self, chat_history):
+    def _launch_text_worker(self, chat_history, system_prompt=None):
         """EXTRACTED: Launch OllamaWorker with correct configuration and signal mappings."""
         self.worker = OllamaWorker(
             chat_history,
             model=self.model_combo.currentText(),
             temperature=self._temperature,
             num_predict=self._num_predict,
+            system_prompt=system_prompt,
         )
         self.worker.response_signal.connect(self.display_response)
         self.worker.status_signal.connect(self._on_status_update)

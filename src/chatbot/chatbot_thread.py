@@ -322,12 +322,13 @@ class OllamaWorker(QThread):
     status_signal = pyqtSignal(str)
 
     def __init__(self, chat_history, model="",
-                 temperature=0.25, num_predict=1024):
+                 temperature=0.25, num_predict=1024, system_prompt=None):
         super().__init__()
         self.chat_history = chat_history
         self.model = model
         self.temperature = temperature
         self.num_predict = num_predict
+        self.system_prompt = system_prompt
         self._stop_requested = False
 
     def stop(self):
@@ -342,7 +343,8 @@ class OllamaWorker(QThread):
             # Keep last 10 history lines (5 turns).
             # Sending 20 lines fills most of the context window before the
             # question is even added, forcing the model to load more tokens.
-            messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+            system_p = self.system_prompt if self.system_prompt else _SYSTEM_PROMPT
+            messages = [{"role": "system", "content": system_p}]
             for line in self.chat_history[-10:]:
                 if line.startswith("User:"):
                     messages.append({"role": "user", "content": line[5:].strip()})
