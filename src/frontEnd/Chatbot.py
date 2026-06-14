@@ -28,6 +28,9 @@ from chatbot.chatbot_thread import (  # type: ignore
 from chatbot.netlist_analysis import (  # type: ignore
     build_netlist_summary_prompt, parse_spice_netlist, NETLIST_SYSTEM_PROMPT,
 )
+from chatbot.error_log_analysis import (  # type: ignore
+    ERROR_ANALYSIS_SYSTEM_PROMPT, build_error_analysis_prompt,
+)
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QTextBrowser, QVBoxLayout,
     QLineEdit, QPushButton, QLabel, QComboBox, QApplication,
@@ -2433,6 +2436,13 @@ class ChatbotGUI(QWidget):
             return
         try:
             os.makedirs(_SESSIONS_DIR, exist_ok=True)
+            # Cap stored images to prevent unbounded session file growth.
+            # Keep only the 10 most recent image sets.
+            _MAX_STORED_IMAGES = 10
+            capped_images = dict(
+                list(self._images_store.items())[-_MAX_STORED_IMAGES:]
+            ) if len(self._images_store) > _MAX_STORED_IMAGES else self._images_store
+
             session = {
                 "id": self._current_session_id,
                 "title": self._derive_session_title(),
@@ -2440,7 +2450,7 @@ class ChatbotGUI(QWidget):
                 "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "messages": self.chat_history[-40:],
                 "kind": self._current_session_kind,
-                "images": self._images_store,
+                "images": capped_images,
                 "settings": {
                     "temperature": self._temperature,
                     "num_predict": self._num_predict,
@@ -3016,8 +3026,10 @@ class ChatbotGUI(QWidget):
         self._scroll_to_bottom()
         self._retry_history = list(self.chat_history)
         self._start_thinking()
-        # EXTRACTED: helper method to launch OllamaWorker
-        self._launch_text_worker(self.chat_history)
+        # Use dedicated error analysis system prompt for structured responses
+        self._launch_text_worker(
+            self.chat_history, system_prompt=ERROR_ANALYSIS_SYSTEM_PROMPT
+        )
         self.user_input.clear()
 
     def debug_error(self, log):
@@ -3062,7 +3074,8 @@ class ChatbotGUI(QWidget):
                 ]
                 filtered_lines = truncated_notice + filtered_lines[-_MAX_ERROR_LOG_LINES:]
 
-            combined_text = "".join(filtered_lines)
+            # Build structured prompt with deterministic error pattern matching
+            structured_prompt = build_error_analysis_prompt(filtered_lines)
             self.status_label.setText(
                 f"Analysing error log ({len(filtered_lines)} lines)..."
             )
@@ -3081,7 +3094,7 @@ class ChatbotGUI(QWidget):
                 pass  # Non-critical -- analysis still proceeds without writing the file
 
             self.chat_history.append(
-                f"User: I got a simulation error. Here is the log:\n{combined_text}"
+                f"User: I got a simulation error. Here is the analysis:\n{structured_prompt}"
             )
             self.debug_ollama()
         else:

@@ -5,7 +5,11 @@ import socket
 import subprocess
 import time
 import threading
-import ollama
+try:
+    import ollama
+    _OLLAMA_AVAILABLE = True
+except ImportError:
+    _OLLAMA_AVAILABLE = False
 from PyQt5.QtCore import QThread, pyqtSignal
 
 # ── Optional imports ──────────────────────────────────────────────────────────
@@ -187,6 +191,8 @@ class OllamaStatusWorker(QThread):
 # EXTRACTED: shared model-name parser used by both ModelFetchWorker and _refresh_model_cache
 def _fetch_model_names() -> list:
     """Call ollama.list() and return a flat list of model name strings."""
+    if not _OLLAMA_AVAILABLE:
+        return []
     models_data = ollama.list()
     raw = (models_data.get('models', [])
            if isinstance(models_data, dict)
@@ -336,6 +342,12 @@ class OllamaWorker(QThread):
 
     def run(self):
         try:
+            if not _OLLAMA_AVAILABLE:
+                self.response_signal.emit(
+                    "❌ The `ollama` Python package is not installed.\n"
+                    "Run: pip install ollama"
+                )
+                return
             if not _ensure_ollama_running(self):
                 return
             self.status_signal.emit("Ollama is ready! Getting response…")
@@ -480,6 +492,8 @@ def _pick_best_vision_model(preferred: str = "") -> str:
     # Prefer smaller/faster models for speed on CPU
     speed_order = [
         "moondream",       # ~1.6 GB — fastest
+        "gemma3:4b",       # ~3 GB  — good vision + fast
+        "gemma3",          # default gemma3 tag
         "llava:7b",        # ~4 GB  — good balance
         "llava",           # ~4 GB  — default tag (usually 7b)
         "bakllava",        # ~4 GB
@@ -584,6 +598,12 @@ class OllamaVisionWorker(QThread):
 
     def run(self):
         try:
+            if not _OLLAMA_AVAILABLE:
+                self.response_signal.emit(
+                    "❌ The `ollama` Python package is not installed.\n"
+                    "Run: pip install ollama"
+                )
+                return
             if not _ensure_ollama_running(self):
                 return
 

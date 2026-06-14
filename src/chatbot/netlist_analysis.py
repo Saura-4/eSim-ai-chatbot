@@ -213,14 +213,27 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
 
 
 NETLIST_SYSTEM_PROMPT = (
-    "You are an expert electronics engineer assistant. "
-    "Your task is to summarize SPICE netlists based strictly on the provided facts and netlist text."
+    "You are an expert electronics engineer assistant inside eSim.\n"
+    "Summarize the SPICE netlist using ONLY the provided facts and netlist text.\n\n"
+    "Use exactly these 3 sections:\n"
+    "1. Circuit Summary — components and subcircuits present\n"
+    "2. Simulation Setup — what simulation command is configured\n"
+    "3. Obvious Issues — missing ground, unresolved subcircuits, missing directives\n\n"
+    "Rules:\n"
+    "- Only state facts visible in the data.\n"
+    "- If not listed, say 'Not found in netlist.'\n"
+    "- Do not invent or assume.\n"
+    "- Be concise."
 )
 
 
 def build_netlist_summary_prompt(
         parsed: ParsedNetlist, raw_lines: Sequence[str]) -> str:
-    """Build a hidden grounding prompt for the LLM from deterministic facts."""
+    """Build a data-only grounding prompt for the LLM from deterministic facts.
+
+    Instructions are in NETLIST_SYSTEM_PROMPT (sent as the system message).
+    This prompt contains only structured facts and raw netlist text.
+    """
     fact_block = "\n".join(build_netlist_facts(parsed, raw_lines))
     active_text, active_truncated = _bounded_text(parsed.active_lines)
     comment_text, comment_truncated = _bounded_text(parsed.comment_lines)
@@ -231,14 +244,6 @@ def build_netlist_summary_prompt(
     ])
 
     return (
-        "Below are the deterministic facts (formatted in YAML) and the raw netlist text of a SPICE circuit.\n"
-        "Analyze them and write a brief report using exactly these 3 sections:\n\n"
-        "1. Circuit Summary (What components and subcircuits are present)\n"
-        "2. Simulation Setup (Is there a simulation command like .tran or .ac configured?)\n"
-        "3. Obvious Issues (Are there unresolved subcircuits, missing ground '0/gnd', or missing directives?)\n\n"
-        "Rule: If something is not explicitly listed in the facts or netlist text, state that it is unknown. "
-        "Do not assume or extrapolate.\n\n"
-        "---\n"
         "[YAML FACTS]\n"
         f"{fact_block}\n"
         f"{truncation_facts}\n\n"

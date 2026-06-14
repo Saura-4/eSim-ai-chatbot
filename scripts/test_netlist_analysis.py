@@ -53,17 +53,24 @@ def test_7805_fixture():
     assert any(command == "plot v(out)" for command in parsed.output_commands)
 
     prompt = build_netlist_summary_prompt(parsed, raw_lines)
-    assert "[FACT COMPONENT_LINES=" in prompt
-    assert "[FACT CURRENT_SOURCE_COUNT=0]" in prompt
-    assert "Use the deterministic facts and bounded netlist text below as the source of truth." in prompt
-    assert "Do not invent components, current sources, voltages, simulation results" in prompt
-    assert "Keep the response concise and concrete." in prompt
-    assert "Observed topology only" in prompt
-    assert "do not call its definition missing" in prompt
-    assert "describe what circuit this is and what it does" not in prompt
-    assert "Please: (1)" not in prompt
-    assert "Likely circuit intent" not in prompt
-    assert "Unknown / cannot determine from netlist alone" in prompt
+    # Verify YAML-style facts are present (Title Case format)
+    assert "Component Lines:" in prompt
+    assert "Current Source Count: 0" in prompt
+    # Verify data section markers
+    assert "[YAML FACTS]" in prompt
+    assert "[ACTIVE NETLIST]" in prompt
+    assert "[COMMENTED/IGNORED LINES]" in prompt
+    assert "[END_ESIM_NETLIST_CONTEXT]" in prompt
+    # Instructions are now in NETLIST_SYSTEM_PROMPT, not in the user prompt
+    assert "Circuit Summary" not in prompt  # moved to system prompt
+    assert "Simulation Setup" not in prompt  # moved to system prompt
+
+    # Verify system prompt contains the format instructions
+    from chatbot.netlist_analysis import NETLIST_SYSTEM_PROMPT
+    assert "Circuit Summary" in NETLIST_SYSTEM_PROMPT
+    assert "Simulation Setup" in NETLIST_SYSTEM_PROMPT
+    assert "Obvious Issues" in NETLIST_SYSTEM_PROMPT
+    assert "Do not invent or assume" in NETLIST_SYSTEM_PROMPT
 
 
 def test_unresolved_subcircuit_without_include():
