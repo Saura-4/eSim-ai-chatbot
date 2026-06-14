@@ -368,6 +368,14 @@ class NgspiceWidget(QtWidgets.QWidget):
         # Display failure message in terminal
         failure_message = self.FAILURE_FORMAT.format("Simulation Failed!")
         self.terminal_ui.simulationConsole.append(failure_message)
+        
+        # Save error log for the Chatbot to analyze
+        try:
+            log_path = os.path.join(self.project_dir, "ngspice_error.log")
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(self.terminal_ui.simulationConsole.toPlainText())
+        except Exception as e:
+            logger.error(f"Failed to write ngspice_error.log: {e}")
 
         # Determine specific error message
         error_message = self._get_error_message(error_type)
