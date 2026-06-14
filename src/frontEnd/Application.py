@@ -533,6 +533,9 @@ class Application(QtWidgets.QMainWindow):
                                                + str(e))
 
                 self.errorDetectedSignal.emit("Simulation failed.")
+        else:
+            # NgSpice simulation failed (non-zero exit code or crash)
+            self.errorDetectedSignal.emit("Simulation failed.")
 
     def handleError(self):
         self.projDir = self.obj_appconfig.current_project["ProjectName"]
