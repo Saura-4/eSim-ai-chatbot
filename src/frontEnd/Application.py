@@ -558,11 +558,16 @@ class Application(QtWidgets.QMainWindow):
             try:
                 projDir = self.obj_appconfig.current_project["ProjectName"]
                 log_path = os.path.join(projDir, "ngspice_error.log")
-                console = (
-                    self.obj_Mainview.obj_dockarea
-                    .findChild(QtWidgets.QTextEdit)
+                
+                # Find all simulation consoles and grab the most recently created one.
+                # DO NOT use findChild(QtWidgets.QTextEdit) without a name, because 
+                # it will grab the text from the 'Welcome / About eSim' tab instead!
+                consoles = self.obj_Mainview.obj_dockarea.findChildren(
+                    QtWidgets.QTextEdit, "simulationConsole"
                 )
+                console = consoles[-1] if consoles else None
                 console_text = console.toPlainText() if console else ""
+                
                 with open(log_path, "w") as f:
                     f.write(console_text)
             except Exception:
