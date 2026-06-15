@@ -522,19 +522,7 @@ class Application(QtWidgets.QMainWindow):
         self.closeproj.setEnabled(True)
         self.wrkspce.setEnabled(True)
 
-        # Unconditionally save the console output so the AI chatbot always analyses the latest run
-        try:
-            projDir = self.obj_appconfig.current_project["ProjectName"]
-            log_path = os.path.join(projDir, "ngspice_error.log")
-            console = (
-                self.obj_Mainview.obj_dockarea
-                .findChild(QtWidgets.QTextEdit)
-            )
-            console_text = console.toPlainText() if console else ""
-            with open(log_path, "w") as f:
-                f.write(console_text)
-        except Exception:
-            pass
+
 
         if exitStatus == QtCore.QProcess.NormalExit and exitCode == 0:
             try:
@@ -564,7 +552,24 @@ class Application(QtWidgets.QMainWindow):
         self.delayed_function_call()
 
     def delayed_function_call(self):
-        QTimer.singleShot(2000, lambda: self.chatbot_window.debug_error(self.output_file))
+        def _trigger_debug():
+            # Save the console output now, giving the Qt event loop 2 seconds 
+            # to finish flushing NgSpice's final error messages to the UI.
+            try:
+                projDir = self.obj_appconfig.current_project["ProjectName"]
+                log_path = os.path.join(projDir, "ngspice_error.log")
+                console = (
+                    self.obj_Mainview.obj_dockarea
+                    .findChild(QtWidgets.QTextEdit)
+                )
+                console_text = console.toPlainText() if console else ""
+                with open(log_path, "w") as f:
+                    f.write(console_text)
+            except Exception:
+                pass
+            self.chatbot_window.debug_error(self.output_file)
+            
+        QTimer.singleShot(2000, _trigger_debug)
 
     def open_ngspice(self):
         """This Function execute ngspice on current project."""
