@@ -2844,7 +2844,7 @@ class ChatbotGUI(QWidget):
             
             # DEBUG: Print the raw log lines so we can see what was captured
             self.chat_display.append(
-                _bot_bubble("DEBUG - Raw ngspice_error.log captured:\n```\n" + "".join(lines) + "\n```")
+                _bot_bubble("DEBUG - Raw ngspice_error.log captured:\n```\n" + "".join(lines) + "\n```", _get_time())
             )
 
             self.chat_history = [f"User: {prompt}"]
