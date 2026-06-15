@@ -31,12 +31,11 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         "A node has no DC path to ground (node 0). Every node must have a resistive path to ground.",
         "Add a high-value resistor (e.g. 1G ohm) from the floating node to ground (node 0).",
     ),
-    (
+        (
         re.compile(r"(?:(?:model|device)\s+['\"]?(\S+)['\"]?\s+(?:not found|undefined|unknown)|can'?t\s+find\s+model|could\s+not\s+find\s+a\s+valid\s+modelname)", re.IGNORECASE),
         "Missing Model",
         "A component references a model/device that is not defined in the netlist.",
-        "Add the missing .model statement or .include the library file "
-        "that defines this model.",
+        "Use the 'Edit Component Properties' in KiCad to add the missing SPICE model, or add an .include statement for the appropriate library file in the Spice Editor. Do NOT invent or guess model parameters.",
     ),
     (
         re.compile(r"Unknown\s+model\s+type\s+(\S+)\s+-\s+ignored", re.IGNORECASE),
@@ -83,6 +82,12 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         "Missing Subcircuit",
         "A subcircuit instantiation (X component) references a .subckt that is not defined.",
         "Add the missing .subckt definition or .include the file containing it.",
+    ),
+    (
+        re.compile(r"(?:no\s+such\s+parameter|parameter\s+is\s+missing|unknown\s+parameter)", re.IGNORECASE),
+        "Invalid Parameter / Syntax Error",
+        "A component has an invalid parameter (e.g., letters instead of numbers like 'AA' instead of a voltage value) or is missing required parameters.",
+        "Check the component values in KiCad. Ensure that all values for sources (like sine, pulse) and components are valid numbers. Do not invent the correct values.",
     ),
 ]
 

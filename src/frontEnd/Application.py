@@ -522,6 +522,20 @@ class Application(QtWidgets.QMainWindow):
         self.closeproj.setEnabled(True)
         self.wrkspce.setEnabled(True)
 
+        # Unconditionally save the console output so the AI chatbot always analyses the latest run
+        try:
+            projDir = self.obj_appconfig.current_project["ProjectName"]
+            log_path = os.path.join(projDir, "ngspice_error.log")
+            console = (
+                self.obj_Mainview.obj_dockarea
+                .findChild(QtWidgets.QTextEdit)
+            )
+            console_text = console.toPlainText() if console else ""
+            with open(log_path, "w") as f:
+                f.write(console_text)
+        except Exception:
+            pass
+
         if exitStatus == QtCore.QProcess.NormalExit and exitCode == 0:
             try:
                 self.obj_Mainview.obj_dockarea.plottingEditor()
@@ -539,21 +553,6 @@ class Application(QtWidgets.QMainWindow):
 
                 self.errorDetectedSignal.emit("Simulation failed.")
         else:
-            # NgSpice simulation failed — write the console output to
-            # ngspice_error.log so the AI chatbot can analyse it.
-            try:
-                projDir = self.obj_appconfig.current_project["ProjectName"]
-                log_path = os.path.join(projDir, "ngspice_error.log")
-                # Grab whatever the simulation console captured
-                console = (
-                    self.obj_Mainview.obj_dockarea
-                    .findChild(QtWidgets.QTextEdit)
-                )
-                console_text = console.toPlainText() if console else ""
-                with open(log_path, "w") as f:
-                    f.write(console_text)
-            except Exception:
-                pass
             self.errorDetectedSignal.emit("Simulation failed.")
 
     def handleError(self):
