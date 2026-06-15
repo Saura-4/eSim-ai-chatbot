@@ -39,6 +39,12 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         "that defines this model.",
     ),
     (
+        re.compile(r"Unknown\s+model\s+type\s+(\S+)\s+-\s+ignored", re.IGNORECASE),
+        "Invalid Model Syntax",
+        "A .model statement has an invalid type or incorrect parameter ordering. The type (e.g., D, NPN, NMOS) must immediately follow the model name before any parameters.",
+        "Fix the .model syntax: `.model <name> <type> <param1=val1 ...>`. For a diode, the type is 'D'.",
+    ),
+    (
         re.compile(r"can'?t\s+find\s+init\s+file", re.IGNORECASE),
         "Init File Missing",
         "NgSpice cannot find its initialization file (.spiceinit or spinit).",
