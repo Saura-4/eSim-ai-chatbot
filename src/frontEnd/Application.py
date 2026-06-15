@@ -589,7 +589,7 @@ class Application(QtWidgets.QMainWindow):
                 return
 
             self.obj_Mainview.obj_dockarea.ngspiceEditor(
-                projName, ngspiceNetlist, self.simulationEndSignal, self.chatbot_window)
+                projName, ngspiceNetlist, self.simulationEndSignal)
 
             self.ngspice.setEnabled(False)
             self.conversion.setEnabled(False)
