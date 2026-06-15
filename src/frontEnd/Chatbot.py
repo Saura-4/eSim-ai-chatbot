@@ -25,7 +25,7 @@ from chatbot.chatbot_thread import (  # type: ignore
     detect_topic_switch, get_stt_backend,
     VISION_MODEL_KEYWORDS,  # EXTRACTED: shared constant, avoids duplicate keyword list
 )
-from chatbot.netlist_analysis import build_netlist_summary_prompt, NETLIST_SYSTEM_PROMPT
+from chatbot.netlist_analysis import parse_spice_netlist, build_netlist_summary_prompt, NETLIST_SYSTEM_PROMPT
 from chatbot.error_log_analysis import (
     build_error_analysis_prompt, ERROR_ANALYSIS_SYSTEM_PROMPT
 )
@@ -2290,7 +2290,16 @@ class ChatbotGUI(QWidget):
             return
 
         # Use the structured parser to build a grounded prompt
-        prompt = build_netlist_summary_prompt(raw_lines)
+        try:
+            parsed = parse_spice_netlist(raw_lines, netlist_path)
+            prompt = build_netlist_summary_prompt(parsed, raw_lines)
+        except Exception as e:
+            self.chat_display.append(
+                f'<table width="100%"><tr><td style="color:#c00;font-size:12px;padding:6px;">'
+                f'❌ Failed to parse netlist: {_escape_text_preserve_breaks(str(e))}</td></tr></table>'
+            )
+            return
+
         system_msg = f"System: {NETLIST_SYSTEM_PROMPT}"
 
         self.chat_history = [system_msg, f"User: {prompt}"][-20:]
