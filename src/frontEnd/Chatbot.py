@@ -2300,15 +2300,13 @@ class ChatbotGUI(QWidget):
             )
             return
 
-        system_msg = f"System: {NETLIST_SYSTEM_PROMPT}"
-
-        self.chat_history = [system_msg, f"User: {prompt}"][-20:]
+        self.chat_history = [f"User: {prompt}"][-20:]
         self._retry_history = list(self.chat_history)
         self._last_user_text = prompt
         self._start_thinking()
 
         # Launch the text worker with the structured prompt
-        self._launch_text_worker(self.chat_history)
+        self._launch_text_worker(self.chat_history, system_prompt=NETLIST_SYSTEM_PROMPT)
 
     # ── Topic switch ─────────────────────────────────────────────────
 
@@ -2504,13 +2502,14 @@ class ChatbotGUI(QWidget):
         # MERGED: also reset streaming-related state so the next message starts clean
         self._reset_stream_state()
 
-    def _launch_text_worker(self, chat_history):
+    def _launch_text_worker(self, chat_history, system_prompt=None):
         """EXTRACTED: Launch OllamaWorker with correct configuration and signal mappings (streaming-aware)."""
         self.worker = OllamaWorker(
             chat_history,
             model=self.model_combo.currentText(),
             temperature=self._temperature,
             num_predict=self._num_predict,
+            system_prompt=system_prompt,
         )
         self.worker.response_signal.connect(self.display_response)
         self.worker.status_signal.connect(self._on_status_update)
@@ -2790,7 +2789,7 @@ class ChatbotGUI(QWidget):
 
     # ── Debug helpers ────────────────────────────────────────────────
 
-    def debug_ollama(self):
+    def debug_ollama(self, system_prompt=None):
         self._current_session_kind = "simulation_error"
         self.chat_display.append(
             '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
@@ -2804,7 +2803,7 @@ class ChatbotGUI(QWidget):
         self._retry_history = list(self.chat_history)
         self._start_thinking()
         # EXTRACTED: helper method to launch OllamaWorker
-        self._launch_text_worker(self.chat_history)
+        self._launch_text_worker(self.chat_history, system_prompt=system_prompt)
         self.user_input.clear()
 
     def debug_error(self, log):
@@ -2837,7 +2836,14 @@ class ChatbotGUI(QWidget):
 
             # Use the structured parser to build a grounded prompt
             prompt = build_error_analysis_prompt(lines)
-            system_msg = f"System: {ERROR_ANALYSIS_SYSTEM_PROMPT}"
 
-            self.chat_history = [system_msg, f"User: {prompt}"]
-            self.debug_ollama()
+            self.chat_history = [f"User: {prompt}"]
+            
+            # DEBUG DUMP
+            try:
+                with open(os.path.join(self.projDir, "debug_prompt.txt"), "w") as df:
+                    df.write(prompt)
+            except Exception:
+                pass
+            
+            self.debug_ollama(system_prompt=ERROR_ANALYSIS_SYSTEM_PROMPT)

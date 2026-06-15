@@ -35,3 +35,5 @@ library/config/.nghdl/
 **/__pycache__/
 **/*.pyc
 
+# Local AI test scripts
+test_ai_features.py

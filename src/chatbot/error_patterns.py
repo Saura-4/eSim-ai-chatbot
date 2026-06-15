@@ -32,7 +32,7 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         "Add a high-value resistor (e.g. 1G ohm) from the floating node to ground (node 0).",
     ),
     (
-        re.compile(r"(?:model|device)\s+['\"]?(\S+)['\"]?\s+(?:not found|undefined|unknown)", re.IGNORECASE),
+        re.compile(r"(?:(?:model|device)\s+['\"]?(\S+)['\"]?\s+(?:not found|undefined|unknown)|can'?t\s+find\s+model|could\s+not\s+find\s+a\s+valid\s+modelname)", re.IGNORECASE),
         "Missing Model",
         "A component references a model/device that is not defined in the netlist.",
         "Add the missing .model statement or .include the library file "

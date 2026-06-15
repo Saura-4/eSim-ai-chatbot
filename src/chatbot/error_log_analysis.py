@@ -13,8 +13,7 @@ from chatbot.error_patterns import match_error_patterns, format_error_context
 # ── System prompt for error analysis ─────────────────────────────────────────
 
 ERROR_ANALYSIS_SYSTEM_PROMPT = (
-    "You are an expert electronics engineer assistant inside eSim, "
-    "an open-source EDA tool by FOSSEE at IIT Bombay.\n\n"
+    "You are an expert circuit simulator debugger assistant.\n\n"
     "TASK: Analyze an NgSpice simulation error log and help the user fix it.\n\n"
     "OUTPUT FORMAT — use exactly these sections:\n"
     "1. **Error** — What error occurred (use the DETECTED ERROR PATTERNS if provided)\n"
@@ -89,6 +88,18 @@ def build_error_analysis_prompt(
     Similar to build_netlist_summary_prompt() — provides deterministic
     facts alongside the raw text so weak LLMs have grounding.
     """
+    # Filter out harmless eSim default model warnings to prevent LLM hallucinations
+    harmless_patterns = [
+        re.compile(r"unable to find definition of model esim_", re.IGNORECASE),
+        re.compile(r"-\s*default assumed", re.IGNORECASE),
+    ]
+    
+    filtered_lines = []
+    for line in log_lines:
+        if not any(p.search(line) for p in harmless_patterns):
+            filtered_lines.append(line)
+            
+    log_lines = filtered_lines
     facts = extract_log_facts(log_lines)
 
     # Truncate log to last N lines (errors are typically at the end)

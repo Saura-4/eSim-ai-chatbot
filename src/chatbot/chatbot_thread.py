@@ -308,12 +308,13 @@ class OllamaWorker(QThread):
     chunk_signal = pyqtSignal(str)
 
     def __init__(self, chat_history, model="",
-                 temperature=0.25, num_predict=1024):
+                 temperature=0.25, num_predict=1024, system_prompt=None):
         super().__init__()
         self.chat_history = chat_history
         self.model = model
         self.temperature = temperature
         self.num_predict = num_predict
+        self.system_prompt = system_prompt
         self._stop_requested = False
 
     def stop(self):
@@ -327,7 +328,8 @@ class OllamaWorker(QThread):
 
             # config-driven history window + system prompt
             max_lines = int(CONFIG.get("history", {}).get("max_lines", 6))
-            messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+            active_system_prompt = self.system_prompt if self.system_prompt else _SYSTEM_PROMPT
+            messages = [{"role": "system", "content": active_system_prompt}]
             for line in self.chat_history[-max_lines:]:
                 if line.startswith("User:"):
                     messages.append({"role": "user", "content": line[5:].strip()})
