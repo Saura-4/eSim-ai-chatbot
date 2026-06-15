@@ -538,6 +538,23 @@ class Application(QtWidgets.QMainWindow):
                                                + str(e))
 
                 self.errorDetectedSignal.emit("Simulation failed.")
+        else:
+            # NgSpice simulation failed — write the console output to
+            # ngspice_error.log so the AI chatbot can analyse it.
+            try:
+                projDir = self.obj_appconfig.current_project["ProjectName"]
+                log_path = os.path.join(projDir, "ngspice_error.log")
+                # Grab whatever the simulation console captured
+                console = (
+                    self.obj_Mainview.obj_dockarea
+                    .findChild(QtWidgets.QTextEdit)
+                )
+                console_text = console.toPlainText() if console else ""
+                with open(log_path, "w") as f:
+                    f.write(console_text)
+            except Exception:
+                pass
+            self.errorDetectedSignal.emit("Simulation failed.")
 
     def handleError(self):
         self.projDir = self.obj_appconfig.current_project["ProjectName"]
