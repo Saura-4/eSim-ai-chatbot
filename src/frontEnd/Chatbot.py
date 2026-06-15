@@ -29,14 +29,14 @@ from chatbot.netlist_analysis import build_netlist_summary_prompt, NETLIST_SYSTE
 from chatbot.error_log_analysis import (
     build_error_analysis_prompt, ERROR_ANALYSIS_SYSTEM_PROMPT
 )
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QTextBrowser, QVBoxLayout,
     QLineEdit, QPushButton, QLabel, QComboBox, QApplication,
     QFileDialog, QDialog, QListWidget, QListWidgetItem, QFrame,
     QScrollArea, QSlider, QInputDialog
 )
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QTextCursor, QKeyEvent, QDragEnterEvent, QDropEvent
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QSize
+from PyQt5.QtGui import QTextCursor, QKeyEvent, QDragEnterEvent, QDropEvent
 from configuration.Appconfig import Appconfig
 from datetime import datetime
 import re
@@ -2044,7 +2044,7 @@ class ChatbotGUI(QWidget):
         self._staging_area.setVisible(bool(self._staged_images))
 
     def _make_thumbnail(self, image_path: str) -> QWidget:
-        from PyQt6.QtGui import QPixmap
+        from PyQt5.QtGui import QPixmap
 
         card = QWidget()
         card.setFixedSize(80, 64)
