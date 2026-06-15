@@ -92,6 +92,12 @@ def build_error_analysis_prompt(
     harmless_patterns = [
         re.compile(r"unable to find definition of model esim_", re.IGNORECASE),
         re.compile(r"-\s*default assumed", re.IGNORECASE),
+        re.compile(r"^\*\* ngspice-\d+", re.IGNORECASE),
+        re.compile(r"^\*\* The U\. C\. Berkeley CAD Group", re.IGNORECASE),
+        re.compile(r"^\*\* Copyright", re.IGNORECASE),
+        re.compile(r"^\*\* Please get your ngspice manual", re.IGNORECASE),
+        re.compile(r"^\*\* Please file your bug-reports", re.IGNORECASE),
+        re.compile(r"^\*{6,}$"),  # Matches the ****** banner separators
     ]
     
     filtered_lines = []
