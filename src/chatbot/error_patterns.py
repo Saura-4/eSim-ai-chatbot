@@ -35,7 +35,7 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         re.compile(r"(?:(?:model|device)\s+['\"]?(\S+)['\"]?\s+(?:not found|undefined|unknown)|can'?t\s+find\s+model|could\s+not\s+find\s+a\s+valid\s+modelname)", re.IGNORECASE),
         "Missing Model",
         "A component references a model/device that is not defined in the netlist.",
-        "Use the 'Edit Component Properties' in KiCad to add the missing SPICE model, or add an .include statement for the appropriate library file in the Spice Editor. Do NOT invent or guess model parameters.",
+        "To fix this, open the 'KiCad to Ngspice' converter window and go to the 'Device Modeling' tab. Click 'Add' to upload the missing .lib or .mod file for your component. eSim will automatically include it in the simulation.",
     ),
     (
         re.compile(r"Unknown\s+model\s+type\s+(\S+)\s+-\s+ignored", re.IGNORECASE),

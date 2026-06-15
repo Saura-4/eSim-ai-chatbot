@@ -2838,14 +2838,8 @@ class ChatbotGUI(QWidget):
                 f"🔍 Analysing error log ({len(lines)} lines)…"
             )
 
-            # Use the structured parser to build a grounded prompt
             prompt, tips = build_error_analysis_prompt(lines)
             self._current_tips = tips
-            
-            # DEBUG: Print the raw log lines so we can see what was captured
-            self.chat_display.append(
-                _bot_bubble("DEBUG - Raw ngspice_error.log captured:\n```\n" + "".join(lines) + "\n```", _get_time())
-            )
 
             self.chat_history = [f"User: {prompt}"]
             
