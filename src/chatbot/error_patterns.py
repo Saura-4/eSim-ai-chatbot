@@ -150,7 +150,6 @@ def format_error_context(matches: List[Dict[str, str]]) -> str:
     for i, m in enumerate(matches, 1):
         lines.append(f"Error {i}: {m['category']}")
         lines.append(f"  Diagnosis: {m['diagnosis']}")
-        lines.append(f"  Suggested fix: {m['fix']}")
         if "entity" in m:
             lines.append(f"  Related entity: {m['entity']}")
         lines.append("")

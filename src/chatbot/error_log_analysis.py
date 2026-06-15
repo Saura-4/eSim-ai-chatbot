@@ -5,7 +5,7 @@ context for the LLM, reducing hallucination on weak local models.
 """
 
 import re
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Tuple
 
 from chatbot.error_patterns import match_error_patterns, format_error_context
 
@@ -14,16 +14,13 @@ from chatbot.error_patterns import match_error_patterns, format_error_context
 
 ERROR_ANALYSIS_SYSTEM_PROMPT = (
     "You are an expert circuit simulator debugger assistant.\n\n"
-    "TASK: Analyze the provided NgSpice simulation error log and help the user fix it.\n\n"
+    "TASK: Analyze the provided NgSpice simulation error log and help the user understand the failure.\n\n"
     "CRITICAL INSTRUCTIONS:\n"
     "- Base your answer STRICTLY on the [SIMULATION ERROR LOG] and [DETECTED ERROR PATTERNS] provided below.\n"
-    "- If a fix is suggested in the detected patterns, you MUST include it verbatim or practically. Do NOT invent random SPICE parameters for missing models.\n"
-    "- Tell the user to use the 'Edit Component Properties' in KiCad or include a library file to fix missing models.\n"
     "- Ignore any mention of successful simulation times if the log text clearly shows a failure.\n\n"
     "OUTPUT FORMAT — use exactly these sections:\n"
     "1. **Error** — What error occurred\n"
     "2. **Cause** — Why this error happens in the circuit\n"
-    "3. **Fix** — Exact steps to fix it in eSim\n"
 )
 
 
@@ -82,11 +79,11 @@ def extract_log_facts(log_lines: Sequence[str]) -> Dict[str, object]:
 def build_error_analysis_prompt(
     log_lines: Sequence[str],
     max_lines: int = 60,
-) -> str:
+) -> Tuple[str, List[Dict[str, str]]]:
     """Build a structured prompt for the LLM from an NgSpice error log.
 
-    Similar to build_netlist_summary_prompt() — provides deterministic
-    facts alongside the raw text so weak LLMs have grounding.
+    Returns:
+        A tuple of (prompt_string, list_of_matched_patterns)
     """
     # Filter out harmless eSim default model warnings to prevent LLM hallucinations
     harmless_patterns = [
@@ -143,4 +140,4 @@ def build_error_analysis_prompt(
     sections.append(log_text)
     sections.append("[END SIMULATION ERROR LOG]")
 
-    return "\n".join(sections)
+    return ("\n".join(sections), facts["error_patterns"])

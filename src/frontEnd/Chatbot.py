@@ -2735,6 +2735,10 @@ class ChatbotGUI(QWidget):
         self._stop_thinking()
         ts = self._stream_ts or _get_time()
 
+        if getattr(self, '_current_session_kind', None) == "simulation_error" and getattr(self, '_current_tips', None):
+            for tip in self._current_tips:
+                bot_response += f"\n\n💡 **eSim Tip:**\n*{tip['fix']}*"
+
         if self._stream_buf is not None:
             idx = self._stream_idx
             anchor_cursor = self._find_stream_anchor_cursor()
@@ -2835,7 +2839,8 @@ class ChatbotGUI(QWidget):
             )
 
             # Use the structured parser to build a grounded prompt
-            prompt = build_error_analysis_prompt(lines)
+            prompt, tips = build_error_analysis_prompt(lines)
+            self._current_tips = tips
 
             self.chat_history = [f"User: {prompt}"]
             
