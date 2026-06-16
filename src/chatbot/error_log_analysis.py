@@ -16,7 +16,8 @@ ERROR_ANALYSIS_SYSTEM_PROMPT = (
     "You are an expert circuit simulator debugger assistant.\n\n"
     "TASK: Analyze the provided NgSpice simulation error log and help the user understand the failure.\n\n"
     "CRITICAL INSTRUCTIONS:\n"
-    "- Base your answer STRICTLY on the [SIMULATION ERROR LOG] and [DETECTED ERROR PATTERNS] provided below.\n"
+    "- Base your answer STRICTLY on the [SIMULATION ERROR LOG], [DETECTED ERROR PATTERNS], and [CIRCUIT FACTS] provided below.\n"
+    "- If the error is a syntax error, typo, or loop, cross-reference the nodes in the [CIRCUIT FACTS] to point out the exact component causing it.\n"
     "- Ignore any mention of successful simulation times if the log text clearly shows a failure.\n\n"
     "OUTPUT FORMAT — use exactly these sections:\n"
     "1. **Error** — What error occurred\n"
@@ -79,6 +80,7 @@ def extract_log_facts(log_lines: Sequence[str]) -> Dict[str, object]:
 def build_error_analysis_prompt(
     log_lines: Sequence[str],
     max_lines: int = 60,
+    netlist_facts: str = "",
 ) -> Tuple[str, List[Dict[str, str]]]:
     """Build a structured prompt for the LLM from an NgSpice error log.
 
@@ -139,5 +141,11 @@ def build_error_analysis_prompt(
     sections.append("[SIMULATION ERROR LOG]")
     sections.append(log_text)
     sections.append("[END SIMULATION ERROR LOG]")
+
+    if netlist_facts:
+        sections.append("")
+        sections.append("[CIRCUIT FACTS]")
+        sections.append(netlist_facts)
+        sections.append("[END CIRCUIT FACTS]")
 
     return ("\n".join(sections), facts["error_patterns"])

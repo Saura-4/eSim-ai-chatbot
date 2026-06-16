@@ -572,7 +572,12 @@ class Application(QtWidgets.QMainWindow):
                     f.write(console_text)
             except Exception:
                 pass
-            self.chatbot_window.debug_error(self.output_file)
+            try:
+                projName = os.path.basename(projDir)
+                ngspiceNetlist = os.path.join(projDir, projName + ".cir.out")
+            except Exception:
+                ngspiceNetlist = None
+            self.chatbot_window.debug_error(self.output_file, ngspiceNetlist)
             
         QTimer.singleShot(2000, _trigger_debug)
 
