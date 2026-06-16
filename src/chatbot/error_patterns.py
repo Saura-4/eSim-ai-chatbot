@@ -15,8 +15,7 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         re.compile(r"singular matrix", re.IGNORECASE),
         "Singular Matrix",
         "The circuit matrix is singular — NgSpice cannot solve the DC operating point.",
-        "Add `.options gmin=1e-12 reltol=0.01` to the netlist. "
-        "Check for floating nodes or missing ground connections.",
+        "Check for floating nodes or missing ground connections. If a node is floating, you must add a high-value resistor (e.g. `R_dummy node_name 0 1G`) to give it a DC path to ground. Adding `.options gmin=1e-12 reltol=0.01` can also help with math convergence.",
     ),
     (
         re.compile(r"timestep too small", re.IGNORECASE),
@@ -88,6 +87,12 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         "Invalid Parameter / Syntax Error",
         "A component has an invalid parameter (e.g., letters instead of numbers like 'AA' instead of a voltage value) or is missing required parameters.",
         "Check the component values in KiCad. Ensure that all values for sources (like sine, pulse) and components are valid numbers. Do not invent the correct values.",
+    ),
+    (
+        re.compile(r"Simulation Completed Successfully!", re.IGNORECASE),
+        "No Plot Data (Simulation Succeeded)",
+        "The simulation actually completed successfully with no errors, but there is no data to plot. The AI Chatbot was triggered because eSim could not find any plot outputs.",
+        "To view your results, go back to your KiCad schematic and place 'Plot' components (e.g., plot_v1, plot_i2) on the wires you want to measure. Then convert and simulate again.",
     ),
 ]
 
