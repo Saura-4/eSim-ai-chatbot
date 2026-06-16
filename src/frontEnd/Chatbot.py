@@ -2810,7 +2810,7 @@ class ChatbotGUI(QWidget):
         self._launch_text_worker(self.chat_history, system_prompt=system_prompt)
         self.user_input.clear()
 
-    def debug_error(self, log, netlist_path=None):
+    def debug_error(self, log):
         """Analyse an NgSpice error log using structured AI parsing.
 
         Uses the deterministic fact-extraction pipeline from
@@ -2838,19 +2838,7 @@ class ChatbotGUI(QWidget):
                 f"🔍 Analysing error log ({len(lines)} lines)…"
             )
 
-            netlist_facts_text = ""
-            if netlist_path and os.path.exists(netlist_path):
-                try:
-                    from chatbot.netlist_analysis import parse_spice_netlist, build_netlist_facts
-                    with open(netlist_path, "r", encoding="utf-8", errors="replace") as f:
-                        raw_lines = f.readlines()
-                    parsed = parse_spice_netlist(raw_lines, netlist_path)
-                    facts_list = build_netlist_facts(parsed, raw_lines)
-                    netlist_facts_text = "\n".join(facts_list)
-                except Exception as e:
-                    print(f"Failed to parse netlist: {e}")
-
-            prompt, tips = build_error_analysis_prompt(lines, netlist_facts_text)
+            prompt, tips = build_error_analysis_prompt(lines)
             self._current_tips = tips
 
             self.chat_history = [f"User: {prompt}"]
