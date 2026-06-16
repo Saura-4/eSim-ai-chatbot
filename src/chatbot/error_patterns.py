@@ -70,7 +70,7 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         "If problem persists, simplify the circuit or check for positive feedback loops.",
     ),
     (
-        re.compile(r"(?:voltage|current)\s+source\s+loop", re.IGNORECASE),
+        re.compile(r"(?:voltage|current)\s+source\s+loop|singular\s+matrix.*?#branch", re.IGNORECASE),
         "Source Loop",
         "Voltage sources form a loop, or current sources feed each other without a path.",
         "Add a small series resistor (e.g. 1m ohm) to break the voltage source loop, "
