@@ -2850,7 +2850,7 @@ class ChatbotGUI(QWidget):
                 except Exception as e:
                     print(f"Failed to parse netlist: {e}")
 
-            prompt, tips = build_error_analysis_prompt(lines, netlist_facts_text)
+            prompt, tips = build_error_analysis_prompt(lines, netlist_facts=netlist_facts_text)
             self._current_tips = tips
 
             self.chat_history = [f"User: {prompt}"]
