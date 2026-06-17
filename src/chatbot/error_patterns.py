@@ -30,7 +30,7 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         "A node has no DC path to ground (node 0). Every node must have a resistive path to ground.",
         "Add a high-value resistor (e.g. 1G ohm) from the floating node to ground (node 0).",
     ),
-        (
+    (
         re.compile(r"(?:(?:model|device)\s+['\"]?(\S+)['\"]?\s+(?:not found|undefined|unknown)|can'?t\s+find\s+model|could\s+not\s+find\s+a\s+valid\s+modelname)", re.IGNORECASE),
         "Missing Model",
         "A component references a model/device that is not defined in the netlist.",
@@ -97,9 +97,9 @@ _ERROR_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
 ]
 
 # Patterns to extract the specific node/component/model name from the error
-_NODE_PATTERN = re.compile(r"(?:node|net)\s+['\"]?(\S+)['\"]?", re.IGNORECASE)
+_NODE_PATTERN = re.compile(r"(?:node|net)\s+['\"]?([^'\"\s]+)['\"]?", re.IGNORECASE)
 _MODEL_PATTERN = re.compile(
-    r"(?:model|device|subcircuit)\s+['\"]?(\S+)['\"]?", re.IGNORECASE
+    r"(?:model|device|subcircuit)\s+['\"]?([^'\"\s]+)['\"]?", re.IGNORECASE
 )
 
 

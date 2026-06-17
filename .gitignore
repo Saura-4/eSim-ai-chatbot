@@ -37,3 +37,7 @@ library/config/.nghdl/
 
 # Local AI test scripts
 test_ai_features.py
+
+# Multi-Agent Teamwork System artifacts
+.agents/
+code_review.md

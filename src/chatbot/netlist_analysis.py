@@ -142,7 +142,8 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
                 ordinary_directives.append(line)
 
             if lower_first == ".include" and len(tokens) >= 2:
-                includes.append(_include_fact(tokens[1], netlist_dir))
+                path_part = line[len(first):].strip().strip('\'"')
+                includes.append(_include_fact(path_part, netlist_dir))
             elif lower_first == ".model" and len(tokens) >= 2:
                 model_names.append(tokens[1])
             elif lower_first == ".subckt" and len(tokens) >= 2:
@@ -451,6 +452,11 @@ def _spice_number_to_float(value: str):
 
     base = float(match.group(1))
     suffix = match.group(2).lower()
+    if suffix.startswith("meg"):
+        scale_char = "meg"
+    else:
+        scale_char = suffix[0]
+
     scale = {
         "f": 1e-15,
         "p": 1e-12,
@@ -461,7 +467,7 @@ def _spice_number_to_float(value: str):
         "meg": 1e6,
         "g": 1e9,
         "t": 1e12,
-    }.get(suffix)
+    }.get(scale_char)
     return None if scale is None else base * scale
 
 

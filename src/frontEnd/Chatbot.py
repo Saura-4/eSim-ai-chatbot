@@ -2496,6 +2496,7 @@ class ChatbotGUI(QWidget):
         self._images_store = {}
         self._last_image_paths = []
         self._current_session_kind = "text"
+        self._current_tips = []
         self._session_title_override = None
         self._current_session_id = str(uuid.uuid4())
         self._session_created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
