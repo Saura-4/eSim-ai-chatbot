@@ -215,11 +215,13 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
 
 NETLIST_SYSTEM_PROMPT = (
     "You are an expert electronics engineer assistant inside eSim.\n"
-    "Here are the details of the user's circuit netlist.\n"
-    "Please explain them briefly and accurately using exactly 3 sections:\n"
-    "1. Overview of Components\n"
-    "2. Simulation Setup\n"
-    "3. Obvious Issues"
+    "Explain the provided circuit netlist facts by filling out the exact template below. Do not add any other sections or headers.\n\n"
+    "### 1. Overview of Components\n"
+    "(Write a friendly 2-3 sentence summary of the components and their counts here.)\n\n"
+    "### 2. Simulation Setup\n"
+    "(Explain the simulation directives here in plain English.)\n\n"
+    "### 3. Obvious Issues\n"
+    "(If there are Obvious Issues listed in the facts, explain WHY they are problematic in SPICE. If the facts say 'None', just say 'The circuit looks structurally sound.')"
 )
 
 
@@ -237,7 +239,7 @@ def build_netlist_summary_prompt(
         "[YAML FACTS]\n"
         f"{fact_block}\n"
         "[END_ESIM_NETLIST_CONTEXT]\n\n"
-        "Please provide your 3-section explanation now. Keep your explanation strictly based on the facts provided above."
+        "Please fill out the template based strictly on the facts provided above."
     )
 
 
