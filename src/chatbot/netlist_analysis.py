@@ -216,6 +216,8 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
 NETLIST_SYSTEM_PROMPT = (
     "You are an electronics assistant inside eSim.\n"
     "Given circuit facts, write 2-3 sentences describing what this circuit does and how it works.\n"
+    "Describe the circuit's structure and purpose only.\n"
+    "Do NOT predict voltages, currents, or simulation results.\n"
     "Only use component names and values from the facts provided.\n"
     "Output plain text only. No JSON, no bullet points, no headers."
 )
@@ -263,7 +265,26 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
     tstop = tran.get("TRAN_TSTOP", "Unknown").split("=")[-1].strip() if "TRAN_TSTOP" in tran else "Unknown"
     tstep = tran.get("TRAN_TSTEP", "Unknown").split("=")[-1].strip() if "TRAN_TSTEP" in tran else "Unknown"
     
-    output_commands = ", ".join(parsed.output_commands) or "None"
+    plots = []
+    saves = []
+    for cmd in parsed.output_commands:
+        cmd_lower = cmd.lower()
+        if cmd_lower.startswith("plot "):
+            plots.append(cmd[5:].strip().upper())
+        elif "allv" in cmd_lower:
+            saves.append("all voltages")
+        elif "alli" in cmd_lower:
+            saves.append("all currents")
+        else:
+            saves.append(cmd)
+
+    outputs_list = []
+    if plots:
+        outputs_list.append(f"**Plots:** {', '.join(plots)}")
+    if saves:
+        outputs_list.append(f"**Saving:** {', '.join(saves)}")
+    
+    outputs_str = "\n".join(outputs_list) if outputs_list else "**Outputs:** None"
     
     markdown = f"""### Components ({total_count} total)
 - **Diodes (D)**: {D_count}
@@ -274,7 +295,7 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
 
 ### Simulation Setup
 **{analysis_type}** · {tstart} → {tstop} · step {tstep}
-**Outputs:** {output_commands}"""
+{outputs_str}"""
 
     return markdown
 
