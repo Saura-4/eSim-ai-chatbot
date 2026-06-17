@@ -308,14 +308,14 @@ class OllamaWorker(QThread):
     chunk_signal = pyqtSignal(str)
 
     def __init__(self, chat_history, model="",
-                 temperature=0.25, num_predict=1024, system_prompt=None, json_mode=False):
+                 temperature=0.25, num_predict=1024, system_prompt=None, netlist_formatter_context=None):
         super().__init__()
         self.chat_history = chat_history
         self.model = model
         self.temperature = temperature
         self.num_predict = num_predict
         self.system_prompt = system_prompt
-        self.json_mode = json_mode
+        self.netlist_formatter_context = netlist_formatter_context
         self._stop_requested = False
 
     def stop(self):
@@ -344,33 +344,8 @@ class OllamaWorker(QThread):
             repeat_pen    = float(CONFIG.get("sampling", {}).get("repeat_penalty", 1.08))
             keep_alive    = CONFIG.get("runtime", {}).get("keep_alive", "-1m")
 
-            if getattr(self, 'json_mode', False):
-                response = ollama.chat(
-                    model=self.model,
-                    messages=messages,
-                    stream=False,
-                    format="json",
-                    options={
-                        "temperature": self.temperature,
-                        "num_predict": budget,
-                        "num_ctx": num_ctx,
-                        "repeat_penalty": repeat_pen,
-                    },
-                    keep_alive=keep_alive
-                )
-                import json
-                try:
-                    data = json.loads(response['message']['content'])
-                    formatted = (
-                        f"### 1. Overview of Components\n{data.get('overview', '')}\n\n"
-                        f"### 2. Simulation Setup\n{data.get('simulation_setup', '')}\n\n"
-                        f"### 3. Next Steps\n"
-                        f"Static netlist analysis is complete. Please run the SPICE simulation to uncover any syntax errors or detailed circuit issues."
-                    )
-                    self.response_signal.emit(formatted)
-                except Exception as e:
-                    self.response_signal.emit(f"Error parsing JSON: {e}")
-                return
+            if self.netlist_formatter_context:
+                self.chunk_signal.emit("### Circuit Overview\n")
 
             stream = ollama.chat(
                 model=self.model,
@@ -396,10 +371,15 @@ class OllamaWorker(QThread):
 
             bot_response = bot_response.strip()
             if not bot_response:
-                bot_response = (
-                    "⚠️ Received an empty response. "
-                    "The model may still be loading — please try again."
-                )
+                bot_response = "Circuit analysis unavailable. See components and simulation details below." if self.netlist_formatter_context else "⚠️ Received an empty response. Please verify the AI model is downloaded and try again."
+
+            if self.netlist_formatter_context and not self._stop_requested:
+                from src.chatbot.netlist_analysis import format_netlist_table
+                table_md = format_netlist_table(self.netlist_formatter_context)
+                self.chunk_signal.emit("\n\n" + table_md)
+                bot_response += "\n\n" + table_md
+
+            self.response_signal.emit(bot_response)
 
         except Exception as e:
             bot_response = (

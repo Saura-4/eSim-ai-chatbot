@@ -214,13 +214,10 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
 
 
 NETLIST_SYSTEM_PROMPT = (
-    "You are an expert electronics engineer assistant inside eSim.\n"
-    "Explain the provided circuit netlist facts.\n\n"
-    "CRITICAL RULES:\n"
-    "1. You MUST respond with a valid JSON object containing EXACTLY two keys: \"overview\" and \"simulation_setup\".\n"
-    "2. For \"overview\", write a friendly 2-3 sentence summary of the components and their counts.\n"
-    "3. For \"simulation_setup\", explain the simulation setup directives.\n"
-    "4. Do NOT output any markdown, do NOT output headers, ONLY output the raw JSON object."
+    "You are an electronics assistant inside eSim.\n"
+    "Given circuit facts, write 2-3 sentences describing what this circuit does and how it works.\n"
+    "Only use component names and values from the facts provided.\n"
+    "Output plain text only. No JSON, no bullet points, no headers."
 )
 
 
@@ -232,14 +229,56 @@ def build_netlist_summary_prompt(
     This prompt contains only structured facts. The raw netlist is intentionally
     excluded to prevent the LLM from hallucinating fixes for syntax errors.
     """
-    fact_block = "\n".join(build_netlist_facts(parsed, raw_lines))
+    component_type_counts = _component_type_counts(parsed.components)
+    subckt_calls = ", ".join([f"{call.reference} instantiates {call.subcircuit} with nodes ({', '.join(call.nodes)})" for call in parsed.subckt_calls]) or "None"
+    voltage_sources = ", ".join(parsed.voltage_sources) or "None"
+    nodes = ", ".join(parsed.nodes) or "None"
+    load_candidates = ", ".join(parsed.load_candidates) or "None"
 
     return (
-        "[YAML FACTS]\n"
-        f"{fact_block}\n"
-        "[END_ESIM_NETLIST_CONTEXT]\n\n"
-        "Remember the CRITICAL RULES: ONLY output a raw JSON object with EXACTLY two keys: \"overview\" and \"simulation_setup\"."
+        "Circuit facts:\n"
+        f"- Components: {component_type_counts}\n"
+        f"- Subcircuits: {subckt_calls}\n"
+        f"- Input source: {voltage_sources}\n"
+        f"- Key nodes: {nodes}\n"
+        f"- Load: {load_candidates}\n\n"
+        "What does this circuit do?"
     )
+
+
+def format_netlist_table(parsed: ParsedNetlist) -> str:
+    """Deterministically format the components table and simulation setup facts into Markdown."""
+    total_count = len(parsed.components)
+    counts = _component_type_counts(parsed.components)
+    
+    D_count = counts.get('D', 0)
+    C_count = counts.get('C', 0)
+    R_count = counts.get('R', 0)
+    V_count = counts.get('V', 0)
+    X_count = counts.get('X', 0)
+    
+    tran = parsed.tran_fields[0] if parsed.tran_fields else {}
+    analysis_type = "Transient Analysis (.tran)" if "TRAN_RAW" in tran else "Simulation"
+    tstart = tran.get("TRAN_TSTART", "0s").split("=")[-1].strip() if "TRAN_TSTART" in tran else "0s"
+    tstop = tran.get("TRAN_TSTOP", "Unknown").split("=")[-1].strip() if "TRAN_TSTOP" in tran else "Unknown"
+    tstep = tran.get("TRAN_TSTEP", "Unknown").split("=")[-1].strip() if "TRAN_TSTEP" in tran else "Unknown"
+    
+    output_commands = ", ".join(parsed.output_commands) or "None"
+    
+    markdown = f"""### Components ({total_count} total)
+| Type | Count |
+|------|-------|
+| Diodes (D) | {D_count} |
+| Capacitors (C) | {C_count} |
+| Resistors (R) | {R_count} |
+| Voltage Sources (V) | {V_count} |
+| Subcircuits (X) | {X_count} |
+
+### Simulation Setup
+{analysis_type} · {tstart} → {tstop} · step {tstep}
+Outputs: {output_commands}"""
+
+    return markdown
 
 
 def build_netlist_facts(parsed: ParsedNetlist, raw_lines: Sequence[str]) -> List[str]:
