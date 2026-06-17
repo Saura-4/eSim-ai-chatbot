@@ -233,29 +233,18 @@ def build_netlist_summary_prompt(
     """Build a data-only grounding prompt for the LLM from deterministic facts.
 
     Instructions are in NETLIST_SYSTEM_PROMPT (sent as the system message).
-    This prompt contains only structured facts and raw netlist text.
+    This prompt contains only structured facts. The raw netlist is intentionally
+    excluded to prevent the LLM from hallucinating fixes for syntax errors.
     """
     fact_block = "\n".join(build_netlist_facts(parsed, raw_lines))
-    active_text, active_truncated = _bounded_text(parsed.active_lines)
-    comment_text, comment_truncated = _bounded_text(parsed.comment_lines)
-
-    truncation_facts = "\n".join([
-        _fact_line("ACTIVE_LINES_TRUNCATED", active_truncated),
-        _fact_line("COMMENT_LINES_TRUNCATED", comment_truncated),
-    ])
 
     return (
         "[YAML FACTS]\n"
         f"{fact_block}\n"
-        f"{truncation_facts}\n\n"
-        "[ACTIVE NETLIST]\n"
-        f"{active_text}\n\n"
-        "[COMMENTED/IGNORED LINES]\n"
-        f"{comment_text}\n"
         "[END_ESIM_NETLIST_CONTEXT]\n\n"
         "CRITICAL INSTRUCTION FOR LLM:\n"
         "You MUST summarize this netlist using exactly 3 sections: 1. Components, 2. Simulation Setup, 3. Obvious Issues.\n"
-        "Read the OBVIOUS_ISSUES section from the facts and output them exactly. Do NOT invent new issues. Do NOT rewrite or fix the netlist code."
+        "Read the OBVIOUS_ISSUES section from the facts and output them exactly. Do NOT invent new issues."
     )
 
 
