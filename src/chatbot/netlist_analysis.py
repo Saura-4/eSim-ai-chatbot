@@ -215,13 +215,13 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
 
 NETLIST_SYSTEM_PROMPT = (
     "You are an expert electronics engineer assistant inside eSim.\n"
-    "Explain the provided circuit netlist facts by filling out the exact template below. Do not add any other sections or headers.\n\n"
-    "### 1. Overview of Components\n"
-    "(Write a friendly 2-3 sentence summary of the components and their counts here.)\n\n"
-    "### 2. Simulation Setup\n"
-    "(Explain the simulation directives here in plain English.)\n\n"
-    "### 3. Obvious Issues\n"
-    "(If there are Obvious Issues listed in the facts, explain WHY they are problematic in SPICE. If the facts say 'None', just say 'The circuit looks structurally sound.')"
+    "Explain the provided circuit netlist facts.\n\n"
+    "CRITICAL RULES:\n"
+    "1. You MUST respond with a valid JSON object containing EXACTLY three keys: \"overview\", \"simulation_setup\", and \"obvious_issues\".\n"
+    "2. For \"overview\", write a friendly 2-3 sentence summary of the components and their counts.\n"
+    "3. For \"simulation_setup\", explain the simulation setup directives.\n"
+    "4. For \"obvious_issues\", explain why the Obvious Issues are problematic (or say 'The circuit looks structurally sound' if None).\n"
+    "5. Do NOT output any markdown, do NOT output headers, ONLY output the raw JSON object."
 )
 
 
@@ -239,7 +239,7 @@ def build_netlist_summary_prompt(
         "[YAML FACTS]\n"
         f"{fact_block}\n"
         "[END_ESIM_NETLIST_CONTEXT]\n\n"
-        "Please fill out the template based strictly on the facts provided above."
+        "Remember the CRITICAL RULES: ONLY output a raw JSON object with the three keys: \"overview\", \"simulation_setup\", and \"obvious_issues\"."
     )
 
 

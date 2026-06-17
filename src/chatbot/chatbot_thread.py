@@ -308,13 +308,14 @@ class OllamaWorker(QThread):
     chunk_signal = pyqtSignal(str)
 
     def __init__(self, chat_history, model="",
-                 temperature=0.25, num_predict=1024, system_prompt=None):
+                 temperature=0.25, num_predict=1024, system_prompt=None, json_mode=False):
         super().__init__()
         self.chat_history = chat_history
         self.model = model
         self.temperature = temperature
         self.num_predict = num_predict
         self.system_prompt = system_prompt
+        self.json_mode = json_mode
         self._stop_requested = False
 
     def stop(self):
@@ -343,6 +344,33 @@ class OllamaWorker(QThread):
             repeat_pen    = float(CONFIG.get("sampling", {}).get("repeat_penalty", 1.08))
             keep_alive    = CONFIG.get("runtime", {}).get("keep_alive", "-1m")
 
+            if getattr(self, 'json_mode', False):
+                response = ollama.chat(
+                    model=self.model,
+                    messages=messages,
+                    stream=False,
+                    format="json",
+                    options={
+                        "temperature": self.temperature,
+                        "num_predict": budget,
+                        "num_ctx": num_ctx,
+                        "repeat_penalty": repeat_pen,
+                    },
+                    keep_alive=keep_alive
+                )
+                import json
+                try:
+                    data = json.loads(response['message']['content'])
+                    formatted = (
+                        f"### 1. Overview of Components\n{data.get('overview', '')}\n\n"
+                        f"### 2. Simulation Setup\n{data.get('simulation_setup', '')}\n\n"
+                        f"### 3. Obvious Issues\n{data.get('obvious_issues', '')}"
+                    )
+                    self.response_signal.emit(formatted)
+                except Exception as e:
+                    self.response_signal.emit(f"Error parsing JSON: {e}")
+                return
+
             stream = ollama.chat(
                 model=self.model,
                 messages=messages,
@@ -352,8 +380,8 @@ class OllamaWorker(QThread):
                     "num_predict": budget,
                     "num_ctx": num_ctx,
                     "repeat_penalty": repeat_pen,
-                    "keep_alive": keep_alive,
-                }
+                },
+                keep_alive=keep_alive
             )
 
             bot_response = ""
