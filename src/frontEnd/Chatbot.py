@@ -2305,8 +2305,8 @@ class ChatbotGUI(QWidget):
         self._last_user_text = prompt
         self._start_thinking()
 
-        # Launch the text worker with the structured prompt
-        self._launch_text_worker(self.chat_history, system_prompt=NETLIST_SYSTEM_PROMPT)
+        # Launch the text worker with the structured prompt and strict low temperature
+        self._launch_text_worker(self.chat_history, system_prompt=NETLIST_SYSTEM_PROMPT, temperature_override=0.1)
 
     # ── Topic switch ─────────────────────────────────────────────────
 
@@ -2503,12 +2503,13 @@ class ChatbotGUI(QWidget):
         # MERGED: also reset streaming-related state so the next message starts clean
         self._reset_stream_state()
 
-    def _launch_text_worker(self, chat_history, system_prompt=None):
+    def _launch_text_worker(self, chat_history, system_prompt=None, temperature_override=None):
         """EXTRACTED: Launch OllamaWorker with correct configuration and signal mappings (streaming-aware)."""
+        temp = temperature_override if temperature_override is not None else self._temperature
         self.worker = OllamaWorker(
             chat_history,
             model=self.model_combo.currentText(),
-            temperature=self._temperature,
+            temperature=temp,
             num_predict=self._num_predict,
             system_prompt=system_prompt,
         )
