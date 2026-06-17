@@ -293,7 +293,7 @@ def _smart_num_predict(user_messages: list, user_override: int = 1024) -> int:
     if is_simple and not is_long:
         budget = 128
     elif is_complex or is_long:
-        budget = 512
+        budget = 1024
     else:
         budget = 256
 

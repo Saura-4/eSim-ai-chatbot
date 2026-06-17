@@ -242,8 +242,9 @@ def build_netlist_summary_prompt(
         f"{fact_block}\n"
         "[END_ESIM_NETLIST_CONTEXT]\n\n"
         "CRITICAL INSTRUCTION FOR LLM:\n"
-        "Act as a helpful AI assistant. Provide a conversational, friendly analysis of the facts above. Explain the components, explain the simulation setup, and most importantly, explain WHY any listed OBVIOUS_ISSUES are problematic in a SPICE simulation.\n"
-        "Do not guess the circuit's overall function. If the user later asks about invalid syntax (like 'AA'), do not invent a meaning; explicitly state it is a syntax error."
+        "You MUST structure your response into exactly 3 sections: 1. Overview, 2. Simulation Setup, 3. Analysis & Recommendations.\n"
+        "Explain the simulation setup and WHY the OBVIOUS_ISSUES are problematic. Do NOT explain individual component parameters (like sine amplitude or frequency) because you will hallucinate them. Just summarize the component counts.\n"
+        "If the user later asks about invalid syntax (like 'AA'), explicitly state it is a syntax error."
     )
 
 
