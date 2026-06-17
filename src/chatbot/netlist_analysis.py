@@ -252,7 +252,10 @@ def build_netlist_summary_prompt(
         f"{active_text}\n\n"
         "[COMMENTED/IGNORED LINES]\n"
         f"{comment_text}\n"
-        "[END_ESIM_NETLIST_CONTEXT]"
+        "[END_ESIM_NETLIST_CONTEXT]\n\n"
+        "CRITICAL INSTRUCTION FOR LLM:\n"
+        "You MUST summarize this netlist using exactly 3 sections: 1. Components, 2. Simulation Setup, 3. Obvious Issues.\n"
+        "Read the OBVIOUS_ISSUES section from the facts and output them exactly. Do NOT invent new issues. Do NOT rewrite or fix the netlist code."
     )
 
 
