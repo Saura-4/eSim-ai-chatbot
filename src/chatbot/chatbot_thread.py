@@ -378,6 +378,9 @@ class OllamaWorker(QThread):
                 table_md = format_netlist_table(self.netlist_formatter_context)
                 bot_response += "\n\n" + table_md
 
+            if self.netlist_formatter_context:
+                bot_response = "### Circuit Overview\n" + bot_response
+
             self.response_signal.emit(bot_response)
 
         except Exception as e:
@@ -385,8 +388,7 @@ class OllamaWorker(QThread):
                 f"❌ Error: {str(e)}\n"
                 "Make sure Ollama is installed and 'ollama serve' is running."
             )
-
-        self.response_signal.emit(bot_response)
+            self.response_signal.emit(bot_response)
 
 
 # ── Vision model helpers ──────────────────────────────────────────────────────
