@@ -364,7 +364,8 @@ class OllamaWorker(QThread):
                     formatted = (
                         f"### 1. Overview of Components\n{data.get('overview', '')}\n\n"
                         f"### 2. Simulation Setup\n{data.get('simulation_setup', '')}\n\n"
-                        f"### 3. Obvious Issues\n{data.get('obvious_issues', '')}"
+                        f"### 3. Next Steps\n"
+                        f"Static netlist analysis is complete. Please run the SPICE simulation to uncover any syntax errors or detailed circuit issues."
                     )
                     self.response_signal.emit(formatted)
                 except Exception as e:
