@@ -216,12 +216,10 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
 NETLIST_SYSTEM_PROMPT = (
     "You are an expert electronics engineer assistant inside eSim.\n"
     "Summarize the SPICE netlist using ONLY the provided facts and netlist text.\n\n"
-    "Use exactly these 4 sections:\n"
-    "1. Components — list key components and subcircuits present\n"
-    "2. Circuit Analysis — Briefly explain what this circuit likely does based on the components (e.g., 'This appears to be a power supply...'). Keep it to 1-2 sentences.\n"
-    "3. Simulation Setup — what simulation command is configured\n"
-    "4. Obvious Issues — check for missing ground (if 'gnd' or '0' is present, it is NOT missing), "
-    "unresolved subcircuits, or missing directives. If there are no issues, explicitly say 'None.'\n\n"
+    "Use exactly these 3 sections:\n"
+    "1. Components — list the key components and subcircuits based on the COMPONENT_TYPE_COUNTS.\n"
+    "2. Simulation Setup — describe the simulation directives found in the facts.\n"
+    "3. Obvious Issues — Read the OBVIOUS_ISSUES section from the facts. Do not invent any new issues. If it says 'None', explicitly state 'No obvious structural issues found.'\n\n"
     "Rules:\n"
     "- Only state facts visible in the data.\n"
     "- If not listed, say 'Not found in netlist.'\n"
@@ -279,6 +277,20 @@ def build_netlist_facts(parsed: ParsedNetlist, raw_lines: Sequence[str]) -> List
             if key in tran:
                 tran_fields.append(f"{key}: {tran[key]}")
 
+    obvious_issues = []
+    if not parsed.reference_node_0_present and not parsed.gnd_label_present:
+        obvious_issues.append("Missing reference ground (node '0' or 'GND').")
+    if not parsed.analysis_directives:
+        obvious_issues.append("No simulation directives (e.g. .tran, .dc, .ac) found.")
+    if parsed.unresolved_subckt_calls:
+        obvious_issues.append(f"Unresolved subcircuits: {', '.join(c.subcircuit for c in parsed.unresolved_subckt_calls)}")
+    missing_includes = [item.token for item in parsed.includes if not item.exists]
+    if missing_includes:
+        obvious_issues.append(f"Missing included files: {', '.join(missing_includes)}")
+    
+    if not obvious_issues:
+        obvious_issues = ["None"]
+
     return [
         _fact_line("NETLIST_FILE", parsed.filename),
         _fact_line("NETLIST_PATH", parsed.path),
@@ -307,6 +319,7 @@ def build_netlist_facts(parsed: ParsedNetlist, raw_lines: Sequence[str]) -> List
         _fact_line("SPICE_REFERENCE_NODE_0_PRESENT", parsed.reference_node_0_present),
         _fact_line("GND_LABEL_PRESENT", parsed.gnd_label_present),
         _fact_line("TRAN_FIELDS", tran_fields),
+        _fact_line("OBVIOUS_ISSUES", obvious_issues),
     ]
 
 
