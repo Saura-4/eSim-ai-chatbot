@@ -376,7 +376,6 @@ class OllamaWorker(QThread):
             if self.netlist_formatter_context and not self._stop_requested:
                 from src.chatbot.netlist_analysis import format_netlist_table
                 table_md = format_netlist_table(self.netlist_formatter_context)
-                self.chunk_signal.emit("\n\n" + table_md)
                 bot_response += "\n\n" + table_md
 
             self.response_signal.emit(bot_response)

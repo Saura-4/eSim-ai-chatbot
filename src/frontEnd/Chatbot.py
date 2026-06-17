@@ -1023,8 +1023,8 @@ class ChatbotGUI(QWidget):
 
     # Sentinel anchor names — used by find_*_anchor_cursor to locate the
     # typing/streaming bubble in the document regardless of reflow position.
-    _TYPING_ANCHOR = '<a name="_typing_anchor_"></a>'
-    _STREAM_ANCHOR = '<a name="_stream_anchor_"></a>'
+    _TYPING_ANCHOR = '<a name="_typing_anchor_">&#8203;</a>'
+    _STREAM_ANCHOR = '<a name="_stream_anchor_">&#8203;</a>'
 
     def __init__(self):
         super().__init__()

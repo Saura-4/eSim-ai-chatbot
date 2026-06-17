@@ -266,17 +266,15 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
     output_commands = ", ".join(parsed.output_commands) or "None"
     
     markdown = f"""### Components ({total_count} total)
-| Type | Count |
-|------|-------|
-| Diodes (D) | {D_count} |
-| Capacitors (C) | {C_count} |
-| Resistors (R) | {R_count} |
-| Voltage Sources (V) | {V_count} |
-| Subcircuits (X) | {X_count} |
+- **Diodes (D)**: {D_count}
+- **Capacitors (C)**: {C_count}
+- **Resistors (R)**: {R_count}
+- **Voltage Sources (V)**: {V_count}
+- **Subcircuits (X)**: {X_count}
 
 ### Simulation Setup
-{analysis_type} · {tstart} → {tstop} · step {tstep}
-Outputs: {output_commands}"""
+**{analysis_type}** · {tstart} → {tstop} · step {tstep}
+**Outputs:** {output_commands}"""
 
     return markdown
 
