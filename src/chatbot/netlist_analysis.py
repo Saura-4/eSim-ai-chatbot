@@ -295,7 +295,9 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
 
 ### Simulation Setup
 **{analysis_type}** · {tstart} → {tstop} · step {tstep}
-{outputs_str}"""
+{outputs_str}
+
+> 💡 **Note:** Please simulate the circuit for proper verification, as some obvious issues can only be caught during simulation."""
 
     return markdown
 
