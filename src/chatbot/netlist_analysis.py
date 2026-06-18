@@ -213,14 +213,96 @@ def parse_spice_netlist(raw_lines: Sequence[str], netlist_path: str = "") -> Par
     )
 
 
-NETLIST_SYSTEM_PROMPT = (
-    "You are an electronics assistant inside eSim.\n"
-    "Given circuit facts, write 2-3 sentences describing what this circuit does and how it works.\n"
-    "Describe the circuit's structure and purpose only.\n"
-    "Do NOT predict voltages, currents, or simulation results.\n"
-    "Only use component names and values from the facts provided.\n"
-    "Output plain text only. No JSON, no bullet points, no headers."
-)
+NETLIST_SYSTEM_PROMPT = """
+You are an electronics assistant inside eSim.
+
+Your goal is to help users understand circuits from SPICE netlists.
+
+Use the extracted facts to explain:
+1. The overall structure of the circuit.
+2. The likely role of important components and subcircuits.
+3. How signals or power flow through the circuit.
+
+Guidelines:
+- Prefer explanations over component listing.
+- Avoid repeating raw component counts.
+- Use electronics knowledge only when supported by the provided facts.
+- Do not predict simulation results.
+- Do not invent measurements.
+- If a common circuit block is recognizable, explain its likely purpose.
+- Keep the explanation concise (3-5 sentences).
+
+Output plain text only.
+No markdown.
+No bullet points.
+No JSON.
+"""
+
+
+def detect_circuit_blocks(parsed: ParsedNetlist) -> List[str]:
+    """Deterministically identify common circuit structures from components."""
+    blocks = []
+    
+    diodes = [c for c in parsed.components if c.prefix == 'D']
+    caps = [c for c in parsed.components if c.prefix == 'C']
+    resistors = [c for c in parsed.components if c.prefix == 'R']
+    v_sources = [c for c in parsed.components if c.prefix == 'V']
+    
+    has_ac = any('sin' in v.value_or_model.lower() or 'ac' in v.value_or_model.lower() for v in v_sources)
+    
+    if len(diodes) >= 4 and has_ac:
+        blocks.append("Bridge rectifier stage")
+    elif len(diodes) == 2 and has_ac:
+        blocks.append("Full-wave rectifier stage")
+    elif len(diodes) == 1 and has_ac:
+        blocks.append("Half-wave rectifier stage")
+        
+    for x in parsed.subckt_calls:
+        sub = x.subcircuit.lower()
+        if '7805' in sub or '7809' in sub or '7812' in sub:
+            blocks.append(f"{x.subcircuit.upper()} regulator stage")
+            break
+            
+    for c in caps:
+        val = c.value_or_model.lower()
+        if 'u' in val or 'm' in val or 'f' in val:
+            if '0' in c.nodes or 'gnd' in [n.lower() for n in c.nodes]:
+                blocks.append("Filter capacitor stage")
+                break
+                
+    if len(resistors) >= 2:
+        for i, r1 in enumerate(resistors):
+            for r2 in resistors[i+1:]:
+                shared = set(r1.nodes).intersection(set(r2.nodes))
+                if len(shared) == 1:
+                    all_nodes = list(r1.nodes) + list(r2.nodes)
+                    if '0' in all_nodes or 'gnd' in [n.lower() for n in all_nodes]:
+                        if "Voltage divider stage" not in blocks:
+                            blocks.append("Voltage divider stage")
+                            
+    for r in resistors:
+        for c in caps:
+            shared = set(r.nodes).intersection(set(c.nodes))
+            if len(shared) == 1:
+                if "RC filter stage" not in blocks:
+                    blocks.append("RC filter stage")
+                    
+    for d in diodes:
+        if 'led' in d.value_or_model.lower():
+            if "LED indicator stage" not in blocks:
+                blocks.append("LED indicator stage")
+            
+    transistors = [c for c in parsed.components if c.prefix in ('Q', 'M')]
+    for t in transistors:
+        if len(t.nodes) >= 3:
+            if t.nodes[2] == '0' or t.nodes[2].lower() == 'gnd':
+                if "Transistor switch stage" not in blocks:
+                    blocks.append("Transistor switch stage")
+                    
+    if parsed.load_candidates:
+        blocks.append("Resistive load")
+        
+    return blocks
 
 
 def build_netlist_summary_prompt(
@@ -250,6 +332,9 @@ def build_netlist_summary_prompt(
     nodes = ", ".join(parsed.nodes) or "None"
     load_candidates = ", ".join(parsed.load_candidates) or "None"
 
+    blocks = detect_circuit_blocks(parsed)
+    blocks_str = "\n".join(f"- {b}" for b in blocks) if blocks else "None detected"
+
     return (
         "Circuit facts:\n"
         f"The circuit contains the following components: {comp_str}.\n"
@@ -257,7 +342,18 @@ def build_netlist_summary_prompt(
         f"Input source details: {voltage_sources}\n"
         f"Key nodes in the circuit: {nodes}\n"
         f"Identified load: {load_candidates}\n\n"
-        "Based on these components and connections, what does this circuit most likely do? Keep it to 2-3 sentences."
+        f"Detected circuit blocks:\n{blocks_str}\n\n"
+        "Task:\n"
+        "Explain the circuit in a way that helps a student understand it.\n\n"
+        "You may:\n"
+        "- Explain the likely role of components and subcircuits.\n"
+        "- Explain how major circuit blocks interact.\n"
+        "- Use standard electronics knowledge when directly supported by the facts.\n\n"
+        "You must not:\n"
+        "- Predict simulation results.\n"
+        "- Invent components not present.\n"
+        "- State exact output voltages or currents unless explicitly given.\n"
+        "- Claim the circuit definitely performs a function that is not supported by the facts."
     )
 
 
