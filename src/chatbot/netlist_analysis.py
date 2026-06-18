@@ -248,6 +248,39 @@ def build_netlist_summary_prompt(
     )
 
 
+def _explain_analysis_directive(line: str) -> str:
+    tokens = line.strip().split()
+    if not tokens:
+        return line
+        
+    cmd = tokens[0].lower()
+    
+    if cmd == '.dc' and len(tokens) >= 5:
+        src, start, stop, step = tokens[1], tokens[2], tokens[3], tokens[4]
+        return f"**DC Sweep (.dc)** · Source {src} · {start} → {stop} · step {step}"
+        
+    elif cmd == '.ac' and len(tokens) >= 5:
+        variation, points, fstart, fstop = tokens[1], tokens[2], tokens[3], tokens[4]
+        var_name = {"dec": "Decade", "oct": "Octave", "lin": "Linear"}.get(variation.lower(), variation)
+        return f"**AC Analysis (.ac)** · {var_name} sweep · {points} pts · {fstart} → {fstop}"
+        
+    elif cmd == '.op':
+        return "**Operating Point (.op)** · Computes DC operating point"
+        
+    elif cmd == '.noise' and len(tokens) >= 5:
+        out_v, in_src, variation, points = tokens[1], tokens[2], tokens[3], tokens[4]
+        return f"**Noise Analysis (.noise)** · Output {out_v} · Input {in_src} · {variation} sweep"
+        
+    elif cmd == '.tf' and len(tokens) >= 3:
+        out_var, in_src = tokens[1], tokens[2]
+        return f"**Transfer Function (.tf)** · Output {out_var} · Input {in_src}"
+        
+    elif cmd == '.pz' and len(tokens) >= 5:
+        n1, n2, n3, n4 = tokens[1], tokens[2], tokens[3], tokens[4]
+        return f"**Pole-Zero Analysis (.pz)** · Nodes ({n1}, {n2}) to ({n3}, {n4})"
+
+    return f"**Analysis:** `{line}`"
+
 def format_netlist_table(parsed: ParsedNetlist) -> str:
     """Deterministically format the components table and simulation setup facts into Markdown."""
     total_count = len(parsed.components)
@@ -286,7 +319,7 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
     # Include other analysis directives like .dc, .ac
     for directive in parsed.analysis_directives:
         if not directive.lower().startswith('.tran'):
-            sim_setup_lines.append(f"**Analysis:** `{directive}`")
+            sim_setup_lines.append(_explain_analysis_directive(directive))
             
     if not sim_setup_lines:
         sim_setup_lines.append("**No simulation directives found.**")
