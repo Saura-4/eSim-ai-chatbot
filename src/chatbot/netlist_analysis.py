@@ -506,7 +506,7 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
 {sim_setup_str}
 {outputs_str}
 
-💡 **Note:** Please simulate the circuit for proper verification, as some obvious issues can only be caught during simulation."""
+💡 **Note:** This overview is based on static netlist analysis. Run a simulation to verify circuit behavior and identify issues that may not be apparent from the netlist alone."""
 
     return markdown
 
