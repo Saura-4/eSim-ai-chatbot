@@ -253,17 +253,45 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
     total_count = len(parsed.components)
     counts = _component_type_counts(parsed.components)
     
-    D_count = counts.get('D', 0)
-    C_count = counts.get('C', 0)
-    R_count = counts.get('R', 0)
-    V_count = counts.get('V', 0)
-    X_count = counts.get('X', 0)
+    COMPONENT_NAMES = {
+        'R': 'Resistors', 'C': 'Capacitors', 'L': 'Inductors',
+        'V': 'Voltage Sources', 'I': 'Current Sources',
+        'D': 'Diodes', 'Q': 'Bipolar Transistors (BJT)',
+        'M': 'MOSFETs', 'J': 'JFETs', 'X': 'Subcircuits',
+        'E': 'Voltage-Controlled Voltage Sources (E)', 
+        'G': 'Voltage-Controlled Current Sources (G)', 
+        'F': 'Current-Controlled Current Sources (F)', 
+        'H': 'Current-Controlled Voltage Sources (H)',
+        'K': 'Coupled Inductors', 'T': 'Transmission Lines',
+        'U': 'Uniform Distributed RC Lines', 'W': 'Current-Controlled Switches', 
+        'Z': 'IGBTs / Switches'
+    }
     
-    tran = parsed.tran_fields[0] if parsed.tran_fields else {}
-    analysis_type = "Transient Analysis (.tran)" if "TRAN_RAW" in tran else "Simulation"
-    tstart = tran.get("TRAN_TSTART", "0s").split("=")[-1].strip() if "TRAN_TSTART" in tran else "0s"
-    tstop = tran.get("TRAN_TSTOP", "Unknown").split("=")[-1].strip() if "TRAN_TSTOP" in tran else "Unknown"
-    tstep = tran.get("TRAN_TSTEP", "Unknown").split("=")[-1].strip() if "TRAN_TSTEP" in tran else "Unknown"
+    comp_lines = []
+    # Sort for deterministic output
+    for prefix, count in sorted(counts.items()):
+        name = COMPONENT_NAMES.get(prefix, f"Other ({prefix})")
+        comp_lines.append(f"- **{name} ({prefix})**: {count}")
+    
+    components_str = "\n".join(comp_lines) if comp_lines else "None"
+    
+    sim_setup_lines = []
+    if parsed.tran_fields:
+        tran = parsed.tran_fields[0]
+        tstart = tran.get("TRAN_TSTART", "0s").split("=")[-1].strip()
+        tstop = tran.get("TRAN_TSTOP", "Unknown").split("=")[-1].strip()
+        tstep = tran.get("TRAN_TSTEP", "Unknown").split("=")[-1].strip()
+        sim_setup_lines.append(f"**Transient Analysis (.tran)** · {tstart} → {tstop} · step {tstep}")
+    
+    # Include other analysis directives like .dc, .ac
+    for directive in parsed.analysis_directives:
+        if not directive.lower().startswith('.tran'):
+            sim_setup_lines.append(f"**Analysis:** `{directive}`")
+            
+    if not sim_setup_lines:
+        sim_setup_lines.append("**No simulation directives found.**")
+        
+    sim_setup_str = "\n".join(sim_setup_lines)
     
     plots = []
     saves = []
@@ -287,17 +315,13 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
     outputs_str = "\n".join(outputs_list) if outputs_list else "**Outputs:** None"
     
     markdown = f"""### Components ({total_count} total)
-- **Diodes (D)**: {D_count}
-- **Capacitors (C)**: {C_count}
-- **Resistors (R)**: {R_count}
-- **Voltage Sources (V)**: {V_count}
-- **Subcircuits (X)**: {X_count}
+{components_str}
 
 ### Simulation Setup
-**{analysis_type}** · {tstart} → {tstop} · step {tstep}
+{sim_setup_str}
 {outputs_str}
 
-> 💡 **Note:** Please simulate the circuit for proper verification, as some obvious issues can only be caught during simulation."""
+💡 **Note:** Please simulate the circuit for proper verification, as some obvious issues can only be caught during simulation."""
 
     return markdown
 
