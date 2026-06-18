@@ -5,22 +5,28 @@ context for the LLM, reducing hallucination on weak local models.
 """
 
 import re
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple, Any
 
-from chatbot.error_patterns import match_error_patterns, format_error_context
+from chatbot.error_patterns import match_error_patterns, ErrorMatch
+from chatbot.error_solutions import get_solution_for_category
 
 
 # ── System prompt for error analysis ─────────────────────────────────────────
 
 ERROR_ANALYSIS_SYSTEM_PROMPT = (
-    "You are an expert circuit simulator debugger assistant.\n\n"
-    "TASK: Analyze the provided NgSpice simulation error log and help the user understand the failure.\n\n"
+    "You are an expert circuit debugger inside eSim.\n\n"
+    "TASK: Explain the pre-diagnosed error to the user in plain language.\n\n"
     "CRITICAL INSTRUCTIONS:\n"
-    "- Base your answer STRICTLY on the [SIMULATION ERROR LOG] and [DETECTED ERROR PATTERNS] provided below.\n"
-    "- Ignore any mention of successful simulation times if the log text clearly shows a failure.\n\n"
-    "OUTPUT FORMAT — use exactly these sections:\n"
-    "1. **Error** — What error occurred\n"
-    "2. **Cause** — Why this error happens in the circuit\n"
+    "- The error has ALREADY been diagnosed. Do NOT re-diagnose.\n"
+    "- Use ONLY the [DETECTED ERROR] facts provided.\n"
+    "- Focus on explaining WHY this error occurs in simple terms.\n"
+    "- Reference the specific nodes/components mentioned.\n"
+    "- Guide the user through the recommended fixes step-by-step.\n"
+    "- Keep your explanation concise (max 150 words).\n\n"
+    "OUTPUT FORMAT:\n"
+    "1. **Error** — One-line summary\n"
+    "2. **Why** — Brief root cause explanation\n"
+    "3. **Fix** — Step-by-step using the provided eSim steps\n"
 )
 
 
@@ -76,14 +82,37 @@ def extract_log_facts(log_lines: Sequence[str]) -> Dict[str, object]:
     return facts
 
 
+def rank_errors(matches: List[ErrorMatch]) -> List[Tuple[str, ErrorMatch]]:
+    """Rank errors as 'Root Cause', 'Secondary Issue', or 'Consequence'.
+    Returns list of (role_label, match) sorted by causal priority."""
+    if not matches:
+        return []
+        
+    sorted_matches = sorted(matches, key=lambda m: m.causal_priority)
+    ranked = []
+    
+    # First item is root cause
+    root_match = sorted_matches[0]
+    ranked.append(("Root Cause", root_match))
+    
+    # Rest are secondary or consequence based on priority
+    for m in sorted_matches[1:]:
+        if m.causal_priority <= 2:
+            ranked.append(("Secondary Issue", m))
+        else:
+            ranked.append(("Consequence", m))
+            
+    return ranked
+
+
 def build_error_analysis_prompt(
     log_lines: Sequence[str],
-    max_lines: int = 60,
-) -> Tuple[str, List[Dict[str, str]]]:
+    max_lines: int = 10,
+) -> Tuple[str, List[Dict[str, Any]]]:
     """Build a structured prompt for the LLM from an NgSpice error log.
 
     Returns:
-        A tuple of (prompt_string, list_of_matched_patterns)
+        A tuple of (prompt_string, list_of_tips_for_gui)
     """
     # Filter out harmless eSim default model warnings to prevent LLM hallucinations
     harmless_patterns = [
@@ -98,46 +127,91 @@ def build_error_analysis_prompt(
     ]
     
     filtered_lines = []
+    error_line_count = 0
     for line in log_lines:
         if not any(p.search(line) for p in harmless_patterns):
             filtered_lines.append(line)
+            if "error" in line.lower() or "failed" in line.lower():
+                error_line_count += 1
             
-    log_lines = filtered_lines
-    facts = extract_log_facts(log_lines)
-
-    # Truncate log to last N lines (errors are typically at the end)
-    if len(log_lines) > max_lines:
-        truncated = True
-        display_lines = log_lines[-max_lines:]
-    else:
-        truncated = False
-        display_lines = log_lines
-
-    log_text = "".join(display_lines).strip()
-    pattern_context = format_error_context(facts["error_patterns"])
+    facts = extract_log_facts(filtered_lines)
+    matches: List[ErrorMatch] = facts["error_patterns"]
+    ranked_errors = rank_errors(matches)
+    
+    # Coverage tracking
+    matched_lines = len(set(m.matched_text for m in matches))
+    coverage = "High" if matched_lines >= error_line_count and error_line_count > 0 else ("Medium" if matched_lines > 0 else "Low")
+    if error_line_count == 0 and matched_lines > 0:
+        coverage = "High"
 
     sections = []
 
-    if pattern_context:
-        sections.append(pattern_context)
+    # 1. Detected Error Block (Focus on Root Cause)
+    tips = []
+    if ranked_errors:
+        root_role, root_match = ranked_errors[0]
+        solution = get_solution_for_category(root_match.category)
+        
+        sections.append("[DETECTED ERROR]")
+        sections.append(f"Error ID: {root_match.error_id}")
+        sections.append(f"Category: {root_match.category}")
+        sections.append(f"Role: {root_role}")
+        sections.append(f"Diagnosis: {root_match.diagnosis}")
+        
+        for k, v in root_match.extracted_facts.items():
+            sections.append(f"Detected {k}: {v}")
+            
+        sections.append("\nLikely Causes:")
+        for cause in solution.get("likely_causes", []):
+            sections.append(f"- {cause}")
+            
+        sections.append("\nRecommended Fixes:")
+        for fix in solution.get("fixes", []):
+            sections.append(f"- {fix}")
+            
+        sections.append("\neSim Steps:")
+        for step in solution.get("esim_steps", []):
+            sections.append(f"- {step}")
+            
+        if solution.get("prevention"):
+            sections.append("\nPrevention:")
+            for prev in solution.get("prevention", []):
+                sections.append(f"- {prev}")
+        sections.append("[END DETECTED ERROR]")
+        
+        # Prepare GUI tips (using the first fix as a tip)
+        if solution.get("fixes"):
+            tips.append({"fix": solution["fixes"][0]})
+            
+        # 2. Secondary Issues
+        if len(ranked_errors) > 1:
+            sections.append("\n[SECONDARY ISSUES]")
+            for role, match in ranked_errors[1:]:
+                sections.append(f"- {match.category} ({role})")
+            sections.append("[END SECONDARY ISSUES]")
 
-    sections.append("[LOG FACTS]")
+    # 3. Coverage tracking
+    sections.append("\n[COVERAGE TRACKING]")
+    sections.append(f"Detected Patterns: {len(matches)}")
+    sections.append(f"Coverage: {coverage}")
+    sections.append("[END COVERAGE TRACKING]")
+
+    # 4. Circuit Context
+    sections.append("\n[CIRCUIT CONTEXT]")
     if facts["circuit_name"]:
         sections.append(f"Circuit: {facts['circuit_name']}")
     if facts["simulation_type"]:
         sections.append(f"Simulation type: {facts['simulation_type']}")
-    sections.append(f"Total log lines: {facts['total_lines']}")
-    if truncated:
-        sections.append(f"Showing last {max_lines} lines")
     if facts["failed_nodes"]:
         sections.append(f"Mentioned nodes: {', '.join(facts['failed_nodes'])}")
     if facts["mentioned_components"]:
         sections.append(f"Mentioned components: {', '.join(facts['mentioned_components'])}")
-    sections.append("[END LOG FACTS]")
+    sections.append("[END CIRCUIT CONTEXT]")
 
-    sections.append("")
-    sections.append("[SIMULATION ERROR LOG]")
-    sections.append(log_text)
-    sections.append("[END SIMULATION ERROR LOG]")
+    # 5. Raw Error Snippet Fallback
+    sections.append("\n[RAW ERROR SNIPPET]")
+    snippet_lines = filtered_lines[-max_lines:] if len(filtered_lines) > max_lines else filtered_lines
+    sections.append("".join(snippet_lines).strip())
+    sections.append("[END RAW ERROR SNIPPET]")
 
-    return ("\n".join(sections), facts["error_patterns"])
+    return ("\n".join(sections), tips)

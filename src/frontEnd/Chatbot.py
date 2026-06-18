@@ -2796,7 +2796,7 @@ class ChatbotGUI(QWidget):
 
     # ── Debug helpers ────────────────────────────────────────────────
 
-    def debug_ollama(self, system_prompt=None):
+    def debug_ollama(self, system_prompt=None, temperature_override=None):
         self._current_session_kind = "simulation_error"
         self.chat_display.append(
             '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
@@ -2810,7 +2810,7 @@ class ChatbotGUI(QWidget):
         self._retry_history = list(self.chat_history)
         self._start_thinking()
         # EXTRACTED: helper method to launch OllamaWorker
-        self._launch_text_worker(self.chat_history, system_prompt=system_prompt)
+        self._launch_text_worker(self.chat_history, system_prompt=system_prompt, temperature_override=temperature_override)
         self.user_input.clear()
 
     def debug_error(self, log):
@@ -2853,4 +2853,4 @@ class ChatbotGUI(QWidget):
             except Exception:
                 pass
             
-            self.debug_ollama(system_prompt=ERROR_ANALYSIS_SYSTEM_PROMPT)
+            self.debug_ollama(system_prompt=ERROR_ANALYSIS_SYSTEM_PROMPT, temperature_override=0.1)
