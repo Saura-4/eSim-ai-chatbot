@@ -227,8 +227,10 @@ Guidelines:
 - Prefer explanations over component listing.
 - Avoid repeating raw component counts.
 - Use electronics knowledge only when supported by the provided facts.
-- Do not predict simulation results.
-- Do not invent measurements.
+- Explain only circuit structure, block interactions, and signal/power flow.
+- Because these are HIGH confidence blocks, use direct language (e.g., "The circuit contains...") and avoid uncertainty words like "likely", "probably", or "appears to".
+- Do not state exact voltages, currents, gain, power levels, regulation levels, efficiency, or performance unless explicitly provided in the facts.
+- Do not infer stable 5V output, regulated 5V output, guaranteed output voltage, application of the circuit, or performance characteristics.
 - If a common circuit block is recognizable, explain its likely purpose.
 - Keep the explanation concise (3-5 sentences).
 
@@ -239,68 +241,64 @@ No JSON.
 """
 
 
-def detect_circuit_blocks(parsed: ParsedNetlist) -> List[str]:
-    """Deterministically identify common circuit structures from components."""
+def detect_circuit_blocks(parsed: ParsedNetlist) -> List[Tuple[str, str, str]]:
+    """Deterministically identify common circuit structures with strict confidence levels and node connections."""
     blocks = []
     
     diodes = [c for c in parsed.components if c.prefix == 'D']
     caps = [c for c in parsed.components if c.prefix == 'C']
-    resistors = [c for c in parsed.components if c.prefix == 'R']
     v_sources = [c for c in parsed.components if c.prefix == 'V']
     
-    has_ac = any('sin' in v.value_or_model.lower() or 'ac' in v.value_or_model.lower() for v in v_sources)
-    
-    if len(diodes) >= 4 and has_ac:
-        blocks.append("Bridge rectifier stage")
-    elif len(diodes) == 2 and has_ac:
-        blocks.append("Full-wave rectifier stage")
-    elif len(diodes) == 1 and has_ac:
-        blocks.append("Half-wave rectifier stage")
+    dc_plus_node = None
+    dc_minus_node = None
+
+    if len(diodes) >= 4:
+        from itertools import combinations
+        for combo in combinations(diodes, 4):
+            anodes = [d.nodes[0] for d in combo if len(d.nodes) >= 2]
+            cathodes = [d.nodes[1] for d in combo if len(d.nodes) >= 2]
+            if len(anodes) == 4 and len(cathodes) == 4:
+                common_cathodes = [n for n in set(cathodes) if cathodes.count(n) == 2 and anodes.count(n) == 0]
+                common_anodes = [n for n in set(anodes) if anodes.count(n) == 2 and cathodes.count(n) == 0]
+                
+                if len(common_cathodes) == 1 and len(common_anodes) == 1:
+                    dc_plus_node = common_cathodes[0]
+                    dc_minus_node = common_anodes[0]
+                    blocks.append(("Bridge rectifier stage", "HIGH", f"DC+ node is {dc_plus_node}, DC- node is {dc_minus_node}"))
+                    break
         
     for x in parsed.subckt_calls:
         sub = x.subcircuit.lower()
         if '7805' in sub or '7809' in sub or '7812' in sub:
-            blocks.append(f"{x.subcircuit.upper()} regulator stage")
+            nodes_str = ", ".join(x.nodes)
+            blocks.append((f"{x.subcircuit.upper()} regulator stage", "HIGH", f"nodes are ({nodes_str})"))
             break
             
     for c in caps:
         val = c.value_or_model.lower()
         if 'u' in val or 'm' in val or 'f' in val:
-            if '0' in c.nodes or 'gnd' in [n.lower() for n in c.nodes]:
-                blocks.append("Filter capacitor stage")
+            is_gnd = '0' in c.nodes or 'gnd' in [n.lower() for n in c.nodes]
+            is_across_bridge = False
+            if dc_plus_node and dc_minus_node:
+                if dc_plus_node in c.nodes and dc_minus_node in c.nodes:
+                    is_across_bridge = True
+            
+            if is_gnd or is_across_bridge:
+                n1 = c.nodes[0] if len(c.nodes) > 0 else 'unknown'
+                n2 = c.nodes[1] if len(c.nodes) > 1 else 'unknown'
+                blocks.append(("Filter capacitor stage", "HIGH", f"connected between {n1} and {n2}"))
                 break
                 
-    if len(resistors) >= 2:
-        for i, r1 in enumerate(resistors):
-            for r2 in resistors[i+1:]:
-                shared = set(r1.nodes).intersection(set(r2.nodes))
-                if len(shared) == 1:
-                    all_nodes = list(r1.nodes) + list(r2.nodes)
-                    if '0' in all_nodes or 'gnd' in [n.lower() for n in all_nodes]:
-                        if "Voltage divider stage" not in blocks:
-                            blocks.append("Voltage divider stage")
-                            
-    for r in resistors:
-        for c in caps:
-            shared = set(r.nodes).intersection(set(c.nodes))
-            if len(shared) == 1:
-                if "RC filter stage" not in blocks:
-                    blocks.append("RC filter stage")
-                    
-    for d in diodes:
-        if 'led' in d.value_or_model.lower():
-            if "LED indicator stage" not in blocks:
-                blocks.append("LED indicator stage")
-            
-    transistors = [c for c in parsed.components if c.prefix in ('Q', 'M')]
-    for t in transistors:
-        if len(t.nodes) >= 3:
-            if t.nodes[2] == '0' or t.nodes[2].lower() == 'gnd':
-                if "Transistor switch stage" not in blocks:
-                    blocks.append("Transistor switch stage")
-                    
     if parsed.load_candidates:
-        blocks.append("Resistive load")
+        for load_ref in parsed.load_candidates:
+            if load_ref.lower().startswith('r'):
+                load_comp = next((c for c in parsed.components if c.reference.lower() == load_ref.lower()), None)
+                if load_comp and len(load_comp.nodes) >= 2:
+                    n1, n2 = load_comp.nodes[0], load_comp.nodes[1]
+                    blocks.append(("Output load resistor", "HIGH", f"connected between {n1} and {n2}"))
+                else:
+                    blocks.append(("Output load resistor", "HIGH", "connected between output and ground"))
+                break
         
     return blocks
 
@@ -333,7 +331,10 @@ def build_netlist_summary_prompt(
     load_candidates = ", ".join(parsed.load_candidates) or "None"
 
     blocks = detect_circuit_blocks(parsed)
-    blocks_str = "\n".join(f"- {b}" for b in blocks) if blocks else "None detected"
+    high_conf_blocks = [b for b in blocks if b[1] == "HIGH"]
+    
+    blocks_str = "\n".join(f"- {b[0]}" for b in high_conf_blocks) if high_conf_blocks else "None explicitly detected"
+    rels_str = "\n".join(f"- {b[0]}: {b[2]}" for b in high_conf_blocks) if high_conf_blocks else "None explicitly detected"
 
     return (
         "Circuit facts:\n"
@@ -342,16 +343,16 @@ def build_netlist_summary_prompt(
         f"Input source details: {voltage_sources}\n"
         f"Key nodes in the circuit: {nodes}\n"
         f"Identified load: {load_candidates}\n\n"
-        f"Detected circuit blocks:\n{blocks_str}\n\n"
+        f"Detected circuit blocks (HIGH confidence):\n{blocks_str}\n\n"
+        f"Detected relationships:\n{rels_str}\n\n"
         "Task:\n"
-        "Explain the circuit in a way that helps a student understand it.\n\n"
+        "Explain how the detected circuit blocks are connected and how signals or power flow through them.\n\n"
         "You may:\n"
-        "- Explain the likely role of components and subcircuits.\n"
-        "- Explain how major circuit blocks interact.\n"
+        "- Explain the flow of power/signals between the blocks.\n"
         "- Use standard electronics knowledge when directly supported by the facts.\n\n"
         "You must not:\n"
         "- Predict simulation results.\n"
-        "- Invent components not present.\n"
+        "- Guess the final application of the circuit (e.g. 'used to power another device').\n"
         "- State exact output voltages or currents unless explicitly given.\n"
         "- Claim the circuit definitely performs a function that is not supported by the facts."
     )
