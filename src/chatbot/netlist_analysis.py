@@ -224,14 +224,11 @@ Use the extracted facts to explain:
 3. How signals or power flow through the circuit.
 
 Guidelines:
-- Prefer explanations over component listing.
-- Avoid repeating raw component counts.
-- Use electronics knowledge only when supported by the provided facts.
 - Explain only circuit structure, block interactions, and signal/power flow.
 - Because these are HIGH confidence blocks, use direct language (e.g., "The circuit contains...") and avoid uncertainty words like "likely", "probably", or "appears to".
-- Do not state exact voltages, currents, gain, power levels, regulation levels, efficiency, or performance unless explicitly provided in the facts.
-- Do not infer stable 5V output, regulated 5V output, guaranteed output voltage, application of the circuit, or performance characteristics.
-- If a common circuit block is recognizable, explain its likely purpose.
+- You MAY use standard component knowledge (e.g., describing an LM7805 as intended to provide a regulated 5V output, or a bridge rectifier as converting AC to DC).
+- You MUST NOT provide strict performance guarantees. Forbidden phrases/concepts include: "guarantees 5V output", "ensures stable voltage under all conditions", "regardless of load conditions", "regardless of input variations", "delivers exactly X volts", or "provides Y amps".
+- The goal is an educational explanation of intended structure and flow, rather than strict formal verification.
 - Keep the explanation concise (3-5 sentences).
 
 Output plain text only.
@@ -349,11 +346,11 @@ def build_netlist_summary_prompt(
         "Explain how the detected circuit blocks are connected and how signals or power flow through them.\n\n"
         "You may:\n"
         "- Explain the flow of power/signals between the blocks.\n"
-        "- Use standard electronics knowledge when directly supported by the facts.\n\n"
+        "- Explain the intended role of known components (e.g. 'acts as a rectifier stage', 'smooths the rectified voltage', 'intended to provide a regulated 5V output').\n\n"
         "You must not:\n"
-        "- Predict simulation results.\n"
-        "- Guess the final application of the circuit (e.g. 'used to power another device').\n"
-        "- State exact output voltages or currents unless explicitly given.\n"
+        "- State absolute performance guarantees ('ensures 5V regardless of conditions', 'delivers exactly 5V').\n"
+        "- Predict strict simulation results.\n"
+        "- Guess the final application of the circuit (e.g. 'used to power a microprocessor').\n"
         "- Claim the circuit definitely performs a function that is not supported by the facts."
     )
 
