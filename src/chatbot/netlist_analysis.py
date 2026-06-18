@@ -257,27 +257,31 @@ def _explain_analysis_directive(line: str) -> str:
     
     if cmd == '.dc' and len(tokens) >= 5:
         src, start, stop, step = tokens[1], tokens[2], tokens[3], tokens[4]
-        return f"**DC Sweep (.dc)** · Source {src} · {start} → {stop} · step {step}"
+        return f"**DC Sweep Analysis (.dc):** This simulation gradually changes the value of source `{src}` starting from {start} up to {stop}, taking a measurement every {step}."
         
     elif cmd == '.ac' and len(tokens) >= 5:
         variation, points, fstart, fstop = tokens[1], tokens[2], tokens[3], tokens[4]
-        var_name = {"dec": "Decade", "oct": "Octave", "lin": "Linear"}.get(variation.lower(), variation)
-        return f"**AC Analysis (.ac)** · {var_name} sweep · {points} pts · {fstart} → {fstop}"
+        var_name = {"dec": "decade", "oct": "octave", "lin": "linear"}.get(variation.lower(), variation)
+        return f"**AC Analysis (.ac):** This simulation sweeps the frequency from {fstart} up to {fstop} using a {var_name} scale, capturing {points} data points per {var_name}."
         
     elif cmd == '.op':
-        return "**Operating Point (.op)** · Computes DC operating point"
+        return "**Operating Point (.op):** This calculates the steady-state DC voltages and currents of the circuit before any time-varying signals are applied."
         
     elif cmd == '.noise' and len(tokens) >= 5:
         out_v, in_src, variation, points = tokens[1], tokens[2], tokens[3], tokens[4]
-        return f"**Noise Analysis (.noise)** · Output {out_v} · Input {in_src} · {variation} sweep"
+        return f"**Noise Analysis (.noise):** This simulates noise at output `{out_v}` relative to input `{in_src}` across a {variation} frequency sweep."
         
     elif cmd == '.tf' and len(tokens) >= 3:
         out_var, in_src = tokens[1], tokens[2]
-        return f"**Transfer Function (.tf)** · Output {out_var} · Input {in_src}"
+        return f"**Transfer Function (.tf):** This computes the DC small-signal transfer function from input `{in_src}` to output `{out_var}`."
         
     elif cmd == '.pz' and len(tokens) >= 5:
         n1, n2, n3, n4 = tokens[1], tokens[2], tokens[3], tokens[4]
-        return f"**Pole-Zero Analysis (.pz)** · Nodes ({n1}, {n2}) to ({n3}, {n4})"
+        return f"**Pole-Zero Analysis (.pz):** This calculates the poles and zeros of the transfer function between input nodes ({n1}, {n2}) and output nodes ({n3}, {n4})."
+        
+    elif cmd == '.sens' and len(tokens) >= 2:
+        out_var = tokens[1]
+        return f"**Sensitivity Analysis (.sens):** This computes the DC small-signal sensitivity of `{out_var}` with respect to circuit parameters."
 
     return f"**Analysis:** `{line}`"
 
@@ -314,7 +318,7 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
         tstart = tran.get("TRAN_TSTART", "0s").split("=")[-1].strip()
         tstop = tran.get("TRAN_TSTOP", "Unknown").split("=")[-1].strip()
         tstep = tran.get("TRAN_TSTEP", "Unknown").split("=")[-1].strip()
-        sim_setup_lines.append(f"**Transient Analysis (.tran)** · {tstart} → {tstop} · step {tstep}")
+        sim_setup_lines.append(f"**Transient Analysis (.tran):** This simulates the circuit over time, starting from {tstart} and running until {tstop}, recording data every {tstep}.")
     
     # Include other analysis directives like .dc, .ac
     for directive in parsed.analysis_directives:
