@@ -231,7 +231,20 @@ def build_netlist_summary_prompt(
     This prompt contains only structured facts. The raw netlist is intentionally
     excluded to prevent the LLM from hallucinating fixes for syntax errors.
     """
-    component_type_counts = _component_type_counts(parsed.components)
+    COMPONENT_NAMES = {
+        'R': 'Resistors', 'C': 'Capacitors', 'L': 'Inductors',
+        'V': 'Voltage Sources', 'I': 'Current Sources',
+        'D': 'Diodes', 'Q': 'Bipolar Transistors',
+        'M': 'MOSFETs', 'J': 'JFETs', 'X': 'Subcircuits'
+    }
+    
+    comp_counts = _component_type_counts(parsed.components)
+    comp_list = []
+    for prefix, count in sorted(comp_counts.items()):
+        name = COMPONENT_NAMES.get(prefix, f"{prefix} components")
+        comp_list.append(f"{count} {name}")
+    comp_str = ", ".join(comp_list) if comp_list else "None"
+
     subckt_calls = ", ".join([f"{call.reference} instantiates {call.subcircuit} with nodes ({', '.join(call.nodes)})" for call in parsed.subckt_calls]) or "None"
     voltage_sources = ", ".join(parsed.voltage_sources) or "None"
     nodes = ", ".join(parsed.nodes) or "None"
@@ -239,12 +252,12 @@ def build_netlist_summary_prompt(
 
     return (
         "Circuit facts:\n"
-        f"- Components: {component_type_counts}\n"
-        f"- Subcircuits: {subckt_calls}\n"
-        f"- Input source: {voltage_sources}\n"
-        f"- Key nodes: {nodes}\n"
-        f"- Load: {load_candidates}\n\n"
-        "What does this circuit do?"
+        f"The circuit contains the following components: {comp_str}.\n"
+        f"Subcircuit details: {subckt_calls}\n"
+        f"Input source details: {voltage_sources}\n"
+        f"Key nodes in the circuit: {nodes}\n"
+        f"Identified load: {load_candidates}\n\n"
+        "Based on these components and connections, what does this circuit most likely do? Keep it to 2-3 sentences."
     )
 
 
