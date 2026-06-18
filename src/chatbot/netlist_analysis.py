@@ -285,10 +285,31 @@ def _explain_analysis_directive(line: str) -> str:
 
     return f"**Analysis:** `{line}`"
 
+def _format_spice_value(prefix: str, value: str) -> str:
+    """Format SPICE value to human-readable with units."""
+    if not value or prefix not in ('R', 'C', 'L', 'V', 'I'):
+        return value
+        
+    unit = {'R': 'Ω', 'C': 'F', 'L': 'H', 'V': 'V', 'I': 'A'}[prefix]
+    
+    match = re.match(r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(meg|[kmunpfgt])?$", value, re.IGNORECASE)
+    if match:
+        num = match.group(1)
+        scale = match.group(2)
+        
+        scale_map = {
+            'meg': ' M', 'k': ' k', 'm': ' m', 'u': ' µ', 
+            'n': ' n', 'p': ' p', 'f': ' f', 'g': ' G', 't': ' T'
+        }
+        
+        scale_str = scale_map.get(scale.lower(), " ") if scale else " "
+        return f"{num}{scale_str}{unit}".strip()
+        
+    return f"{value} {unit}".strip()
+
 def format_netlist_table(parsed: ParsedNetlist) -> str:
     """Deterministically format the components table and simulation setup facts into Markdown."""
     total_count = len(parsed.components)
-    counts = _component_type_counts(parsed.components)
     
     COMPONENT_NAMES = {
         'R': 'Resistors', 'C': 'Capacitors', 'L': 'Inductors',
@@ -304,11 +325,31 @@ def format_netlist_table(parsed: ParsedNetlist) -> str:
         'Z': 'IGBTs / Switches'
     }
     
+    from collections import defaultdict
+    comp_groups = defaultdict(list)
+    for comp in parsed.components:
+        comp_groups[comp.prefix].append(comp)
+        
     comp_lines = []
     # Sort for deterministic output
-    for prefix, count in sorted(counts.items()):
+    for prefix in sorted(comp_groups.keys()):
+        comps = comp_groups[prefix]
+        count = len(comps)
         name = COMPONENT_NAMES.get(prefix, f"Other ({prefix})")
-        comp_lines.append(f"- **{name} ({prefix})**: {count}")
+        
+        items = []
+        for c in comps[:5]:
+            val = _format_spice_value(prefix, c.value_or_model)
+            if val:
+                items.append(f"{c.reference}: {val}")
+            else:
+                items.append(f"{c.reference}")
+                
+        items_str = ", ".join(items)
+        if count > 5:
+            items_str += f"... and {count - 5} more"
+            
+        comp_lines.append(f"- **{name} ({prefix})**: {count} `({items_str})`")
     
     components_str = "\n".join(comp_lines) if comp_lines else "None"
     
