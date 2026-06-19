@@ -43,3 +43,7 @@ test_regex2.py
 # Multi-Agent Teamwork System artifacts
 .agents/
 code_review.md
+
+# Local test projects
+Examples/ErrorTests/
+
