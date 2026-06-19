@@ -16,7 +16,7 @@ Run:  python test_error_pipeline_regression.py
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from chatbot.error_patterns import match_error_patterns, ErrorMatch
 from chatbot.error_log_analysis import rank_errors, RankedError
