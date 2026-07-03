@@ -44,6 +44,16 @@ _OFFLINE_FOOTNOTE = (
     "explanation, start **Ollama** with a local model and retry.*"
 )
 
+_NETLIST_OFFLINE_FOOTNOTE = (
+    "\n\n---\n"
+    "Note:\n"
+    "This analysis is based only on static SPICE netlist inspection.\n\n"
+    "Circuit operation, voltages, currents, transient behavior, convergence, "
+    "and performance can only be verified by running a simulation.\n\n"
+    "For a more detailed natural-language explanation, start Ollama with "
+    "a local model and retry."
+)
+
 
 # ── Error analysis offline formatter ─────────────────────────────────────────
 
@@ -179,6 +189,106 @@ def format_error_analysis_offline(
 
 # ── Netlist analysis offline formatter ───────────────────────────────────────
 
+def _get_block_friendly_name(block_name: str) -> str:
+    name_lower = block_name.lower()
+    if "bridge rectifier" in name_lower:
+        return "a bridge rectifier"
+    elif "regulator" in name_lower:
+        for model in ["7805", "7809", "7812"]:
+            if model in name_lower:
+                return f"an LM{model} regulator"
+        return "a voltage regulator"
+    elif "filter capacitor" in name_lower:
+        return "a filter capacitor"
+    elif "output load" in name_lower:
+        return "an output load"
+    else:
+        clean_name = block_name.replace(" stage", "").replace(" STAGE", "").strip()
+        return f"a {clean_name.lower()}"
+
+
+def _generate_circuit_overview(
+    parsed: ParsedNetlist, high_conf_blocks: List[Tuple[str, str, str]]
+) -> str:
+    if high_conf_blocks:
+        has_rectifier = any("rectifier" in b[0].lower() for b in high_conf_blocks)
+        has_regulator = any("regulator" in b[0].lower() for b in high_conf_blocks)
+        has_filter = any("capacitor" in b[0].lower() for b in high_conf_blocks)
+
+        detected_type = None
+        if has_rectifier and has_regulator:
+            detected_type = "AC to regulated DC power supply"
+        elif has_rectifier and has_filter:
+            detected_type = "AC to DC rectifier and filter circuit"
+        elif has_rectifier:
+            detected_type = "AC to DC rectifier circuit"
+        elif has_regulator:
+            detected_type = "DC voltage regulation circuit"
+
+        friendly_names = [_get_block_friendly_name(b[0]) for b in high_conf_blocks]
+        if len(friendly_names) == 1:
+            blocks_sentence = f"The circuit contains {friendly_names[0]}."
+        elif len(names_list := friendly_names) == 2:
+            blocks_sentence = f"The circuit contains {names_list[0]} and {names_list[1]}."
+        else:
+            blocks_sentence = f"The circuit contains {', '.join(friendly_names[:-1])}, and {friendly_names[-1]}."
+
+        if detected_type:
+            return f"Detected circuit: {detected_type}.\n\n{blocks_sentence}"
+        else:
+            return blocks_sentence
+    else:
+        comp_type_map = {
+            'R': 'resistors', 'C': 'capacitors', 'L': 'inductors',
+            'V': 'voltage sources', 'I': 'current sources',
+            'D': 'diodes', 'Q': 'bipolar transistors',
+            'M': 'MOSFETs', 'J': 'JFETs', 'X': 'subcircuits'
+        }
+        present_prefixes = sorted(list(set(c.prefix for c in parsed.components if c.prefix in comp_type_map)))
+        if present_prefixes:
+            names = [comp_type_map[p] for p in present_prefixes]
+            if len(names) == 1:
+                return f"The circuit is a basic network consisting of {names[0]}."
+            elif len(names) == 2:
+                return f"The circuit is a basic network consisting of {names[0]} and {names[1]}."
+            else:
+                return f"The circuit is a general network consisting of {', '.join(names[:-1])}, and {names[-1]}."
+        else:
+            return "The netlist contains no standard circuit blocks or recognized components."
+
+
+def _format_detected_block(block_name: str, relationship: str) -> str:
+    name_lower = block_name.lower()
+    lines = [f"- **{block_name}**"]
+
+    if "rectifier" in name_lower:
+        lines.append("  Converts the AC input into pulsating DC.")
+        conn = relationship.replace("DC+ node is ", "DC+ = ").replace("DC- node is ", "DC− = ")
+        lines.append(f"  Connection: {conn}")
+    elif "regulator" in name_lower:
+        if "7805" in name_lower:
+            reg_model = "an LM7805"
+        elif "7809" in name_lower:
+            reg_model = "an LM7809"
+        elif "7812" in name_lower:
+            reg_model = "an LM7812"
+        else:
+            reg_model = "a voltage"
+        lines.append(f"  Regulates the filtered DC using {reg_model} regulator.")
+        conn = relationship.replace("nodes are ", "")
+        lines.append(f"  Nodes: {conn.upper() if conn.replace(',', '').replace(' ', '').isalpha() else conn}")
+    elif "capacitor" in name_lower:
+        lines.append("  Smooths the rectified voltage.")
+        lines.append(f"  {relationship.capitalize()}")
+    elif "load" in name_lower:
+        lines.append("  Represents the output load connected across the regulated output.")
+    else:
+        lines.append("  Circuit functional stage.")
+        lines.append(f"  {relationship.capitalize()}")
+
+    return "\n".join(lines)
+
+
 def format_netlist_analysis_offline(
     parsed: ParsedNetlist,
     raw_lines: Sequence[str],
@@ -193,11 +303,21 @@ def format_netlist_analysis_offline(
     """
     sections: List[str] = []
 
-    # ── Component table and simulation setup (already implemented) ────
+    # ── 1. Circuit Overview (New Section) ────────────────────────────
+    blocks = detect_circuit_blocks(parsed)
+    high_conf = [b for b in blocks if b[1] == "HIGH"]
+
+    overview_text = _generate_circuit_overview(parsed, high_conf)
+    sections.append("### Circuit Overview\n" + overview_text)
+
+    # ── 2. Component table and simulation setup (already implemented) ────
     table_md = format_netlist_table(parsed)
+    note_marker = "\n\n💡 **Note:** This overview is based on static netlist analysis. Run a simulation to verify circuit behavior and identify issues that may not be apparent from the netlist alone."
+    if note_marker in table_md:
+        table_md = table_md.split(note_marker)[0]
     sections.append(table_md)
 
-    # ── Obvious issues ───────────────────────────────────────────────
+    # ── 3. Obvious issues ───────────────────────────────────────────────
     issues: List[str] = []
     if not parsed.reference_node_0_present and not parsed.gnd_label_present:
         issues.append("Missing reference ground (node `0` or `GND`).")
@@ -219,28 +339,27 @@ def format_netlist_analysis_offline(
         )
 
     if issues:
-        sections.append("\n### ⚠️ Issues Found")
+        sections.append("\n### Issues Found")
         for issue in issues:
             sections.append(f"- **{issue}**")
     else:
-        sections.append("\n### ✅ Issues Found")
+        sections.append("\n### Issues Found")
         sections.append("- *No obvious issues detected.*")
 
-    # ── Detected circuit blocks ──────────────────────────────────────
-    blocks = detect_circuit_blocks(parsed)
-    high_conf = [b for b in blocks if b[1] == "HIGH"]
-
+    # ── 4. Detected circuit blocks ──────────────────────────────────────
+    sections.append("\n### Detected Circuit Blocks")
     if high_conf:
-        sections.append("\n### 🧩 Detected Circuit Blocks")
-        for block_name, _, relationship in high_conf:
-            sections.append(f"- **{block_name}** — *{relationship}*")
+        block_strings = [
+            _format_detected_block(block_name, relationship)
+            for block_name, _, relationship in high_conf
+        ]
+        sections.append("\n\n".join(block_strings))
     else:
-        sections.append("\n### 🧩 Detected Circuit Blocks")
         sections.append(
             "- *No standard circuit blocks detected with high confidence.*"
         )
 
-    # ── Model and subcircuit definitions ─────────────────────────────
+    # ── 5. Model and subcircuit definitions ─────────────────────────────
     if parsed.model_names:
         models_str = ", ".join(f"`{m}`" for m in parsed.model_names)
         sections.append(
@@ -252,6 +371,6 @@ def format_netlist_analysis_offline(
             f"**Defined Subcircuits:** {subckts_str}"
         )
 
-    sections.append(_OFFLINE_FOOTNOTE)
+    sections.append(_NETLIST_OFFLINE_FOOTNOTE)
 
     return "\n".join(sections)
