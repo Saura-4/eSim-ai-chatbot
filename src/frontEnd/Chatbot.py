@@ -23,11 +23,16 @@ from chatbot.chatbot_thread import (  # type: ignore
     OllamaWorker, OllamaVisionWorker, MicWorker,
     OllamaStatusWorker, ModelFetchWorker,
     detect_topic_switch, get_stt_backend,
+    is_ollama_running,
     VISION_MODEL_KEYWORDS,  # EXTRACTED: shared constant, avoids duplicate keyword list
 )
 from chatbot.netlist_analysis import parse_spice_netlist, build_netlist_summary_prompt, NETLIST_SYSTEM_PROMPT
 from chatbot.error_log_analysis import (
     build_error_analysis_prompt, ERROR_ANALYSIS_SYSTEM_PROMPT
+)
+from chatbot.offline_formatter import (
+    format_error_analysis_offline,
+    format_netlist_analysis_offline,
 )
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QTextBrowser, QVBoxLayout,
@@ -2292,13 +2297,25 @@ class ChatbotGUI(QWidget):
         # Use the structured parser to build a grounded prompt
         try:
             parsed = parse_spice_netlist(raw_lines, netlist_path)
-            prompt = build_netlist_summary_prompt(parsed, raw_lines)
         except Exception as e:
             self.chat_display.append(
                 f'<table width="100%"><tr><td style="color:#c00;font-size:12px;padding:6px;">'
-                f'❌ Failed to parse netlist: {_escape_text_preserve_breaks(str(e))}</td></tr></table>'
+                f'Could not parse netlist: {_escape_text_preserve_breaks(str(e))}</td></tr></table>'
             )
             return
+
+        # Offline fallback: if Ollama is unavailable, format the
+        # deterministic analysis directly without an LLM call.
+        if not is_ollama_running():
+            offline_response = format_netlist_analysis_offline(
+                parsed, raw_lines
+            )
+            self.chat_history = [f"User: [Netlist analysis: {filename}]"]
+            self.display_response(offline_response)
+            return
+
+        # Online path: build a grounding prompt and send to the LLM.
+        prompt = build_netlist_summary_prompt(parsed, raw_lines)
 
         self.chat_history = [f"User: {prompt}"][-20:]
         self._retry_history = list(self.chat_history)
@@ -2838,9 +2855,20 @@ class ChatbotGUI(QWidget):
                 return
 
             self.status_label.setText(
-                f"🔍 Analysing error log ({len(lines)} lines)…"
+                f"Analysing error log ({len(lines)} lines)..."
             )
 
+            # Offline fallback: if Ollama is unavailable, format the
+            # deterministic analysis directly without an LLM call.
+            if not is_ollama_running():
+                offline_response = format_error_analysis_offline(lines)
+                self._current_tips = []  # fixes are already in the response
+                self.chat_history = [f"User: [Error log analysis]"]
+                self.status_label.setText("")
+                self.display_response(offline_response)
+                return
+
+            # Online path: build a grounding prompt and send to the LLM.
             prompt, tips = build_error_analysis_prompt(lines)
             self._current_tips = tips
 
