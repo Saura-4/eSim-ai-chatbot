@@ -39,19 +39,18 @@ _HARMLESS_PATTERNS = [
 
 _OFFLINE_FOOTNOTE = (
     "\n\n---\n"
-    "💡 *Note: This analysis was generated using the deterministic "
-    "pipeline without an LLM. For a more detailed natural-language "
+    "💡 **Note:** This analysis was generated using the deterministic "
+    "pipeline without an LLM. *For a more detailed natural-language "
     "explanation, start **Ollama** with a local model and retry.*"
 )
 
 _NETLIST_OFFLINE_FOOTNOTE = (
     "\n\n---\n"
-    "Note:\n"
-    "This analysis is based only on static SPICE netlist inspection.\n\n"
+    "💡 **Note:** This analysis is based only on static SPICE netlist inspection. "
     "Circuit operation, voltages, currents, transient behavior, convergence, "
     "and performance can only be verified by running a simulation.\n\n"
-    "For a more detailed natural-language explanation, start Ollama with "
-    "a local model and retry."
+    "*For a more detailed natural-language explanation, start **Ollama** with "
+    "a local model and retry.*"
 )
 
 
