@@ -2709,6 +2709,19 @@ class ChatbotGUI(QWidget):
             self._scroll_to_bottom()
             self._last_image_paths = list(staged_paths)
             self._clear_staged_images()
+
+            # Guard: Ollama must be running for vision analysis
+            if not is_ollama_running():
+                offline_msg = (
+                    "**Ollama is not running.**\n\n"
+                    "Image analysis requires a running Ollama server with a vision model.\n\n"
+                    "To start Ollama, open a terminal and run:\n"
+                    "```\nollama serve\n```\n\n"
+                    "Then send your message again."
+                )
+                self.display_response(offline_msg)
+                return
+
             self._start_thinking()
 
             # EXTRACTED: helper method to launch OllamaVisionWorker
@@ -2732,6 +2745,21 @@ class ChatbotGUI(QWidget):
         self.user_input.clear()
         self._last_user_text = user_text
         self._retry_history = list(self.chat_history)
+
+        # Guard: Ollama must be running for follow-up chat
+        if not is_ollama_running():
+            offline_msg = (
+                "**Ollama is not running.**\n\n"
+                "Follow-up questions and general chat require a running Ollama server.\n\n"
+                "To start Ollama, open a terminal and run:\n"
+                "```\nollama serve\n```\n\n"
+                "Then send your message again.\n\n"
+                "*Note: Error analysis and netlist analysis work offline "
+                "using the deterministic pipeline — use the toolbar buttons above.*"
+            )
+            self.display_response(offline_msg)
+            return
+
         self._start_thinking()
 
         # EXTRACTED: helper method to launch OllamaWorker
